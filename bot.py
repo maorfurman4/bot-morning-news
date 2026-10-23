@@ -64,7 +64,12 @@ FEEDS = {
     ],
     "ai": [
         ("TechCrunch", "https://techcrunch.com/category/artificial-intelligence/feed/"),
+        ("MIT Technology Review", "https://www.technologyreview.com/topic/artificial-intelligence/feed"),
+    ],
+    "tech": [
         ("BBC", "https://feeds.bbci.co.uk/news/technology/rss.xml"),
+        ("TechCrunch", "https://techcrunch.com/category/robotics/feed/"),
+        ("IEEE Spectrum", "https://spectrum.ieee.org/feeds/topic/robotics.rss"),
     ],
     "world": [
         ("BBC", "https://feeds.bbci.co.uk/news/world/rss.xml"),
@@ -217,17 +222,19 @@ PROMPT = """
 1. השתמש אך ורק בכתבות שקיבלת (לפי id) ובמספרים שקיבלת. אסור להמציא עובדות, מספרים או סיבות.
 2. הכל בעברית עסקית וזורמת. שם חברה באנגלית מותר בתוך משפט, לא בתחילתו.
 3. title — כותרת מושכת וקצרה. bottom_line — 2 שורות: מה קרה, ולמה זה חשוב / מה המשמעות.
-4. אל תחזור על אותו סיפור בשני מדורים. בחר את הכתבות החשובות והמשמעותיות ביותר, לא סתם רכילות.
+4. אל תחזור על אותו סיפור בשני מדורים. כל מדור נשלח כהודעה נפרדת: הכנס בו את כל הידיעות הקריטיות
+   והמשמעותיות (3 עד 6), לפי סדר חשיבות. לא למלא ברכילות או בידיעות שוליות רק כדי להגיע למספר.
 5. אם אין כתבה שמסבירה תזוזה של מניה — כתוב "אין סיבה מדווחת בכתבות מהיממה האחרונה" ואל תנחש.
 
 החזר JSON בלבד במבנה:
 {
-  "israel": [{"id": "...", "emoji": "🛡️", "title": "...", "bottom_line": "..."}],   // בדיוק 3
-  "ai":     [{"id": "...", "emoji": "...", "title": "...", "bottom_line": "..."}],    // בדיוק 3 — בינה מלאכותית וטכנולוגיה
-  "world":  [{"id": "...", "emoji": "...", "title": "...", "bottom_line": "..."}],    // בדיוק 3 — אקטואליה עולמית וכלכלה
+  "israel": [{"id": "...", "emoji": "🛡️", "title": "...", "bottom_line": "..."}],   // ישראל — ביטחון, פוליטיקה, כלכלה
+  "ai":     [{"id": "...", "emoji": "...", "title": "...", "bottom_line": "..."}],    // בינה מלאכותית
+  "tech":   [{"id": "...", "emoji": "...", "title": "...", "bottom_line": "..."}],    // טכנולוגיה ורובוטיקה (לא AI)
+  "world":  [{"id": "...", "emoji": "...", "title": "...", "bottom_line": "..."}],    // אקטואליה עולמית וכלכלה
   "market_why": [{"text": "...", "ids": ["..."]}],    // 2-3 משפטים: מה זז באמת בשווקים ולמה (מספרים מ-markets + כתבות market)
   "companies": [{"ticker": "...", "id": "... או null", "emoji": "...", "title": "...", "bottom_line": "..."}]
-      // חובה פריט לכל מניה עם dramatic=true; ועוד עד 3 ידיעות משמעותיות על המניות שלי
+      // חובה פריט לכל מניה עם dramatic=true; ועוד כל ידיעה משמעותית על המניות שלי
 }
 """
 
@@ -271,11 +278,8 @@ def article(e: dict, need_id: bool = True) -> str:
         out += f"\n🔗 <a href=\"{esc(item['link'])}\">לקריאת הכתבה המלאה</a> · {esc(item['source'])}"
     return out
 
-def section(title: str, blocks: list) -> str:
-    blocks = [b for b in blocks if b]
-    return f"{title}\n" + "\n\n".join(blocks) if blocks else ""
-
 def render(today: datetime, market_rows: list, close_date, holdings: dict, ai: dict) -> list:
+    """רשימת הודעות — הודעה לכל נושא; כל הודעה היא כותרת + בלוקים."""
     why = []
     for w in ai.get("market_why") or []:
         src = " · ".join(f'<a href="{esc(ITEMS[i]["link"])}">{esc(ITEMS[i]["source"])}</a>' for i in w.get("ids") or [] if i in ITEMS)
@@ -283,7 +287,8 @@ def render(today: datetime, market_rows: list, close_date, holdings: dict, ai: d
             why.append(f"• {esc(w['text'])}" + (f" ({src})" if src else ""))
 
     stocks = [
-        "📊 <b>מצב השוק</b>" + (f" <i>(סגירה {close_date:%d/%m})</i>" if close_date else "") + "\n" + "\n".join(market_rows),
+        "📊 <b>מצב השוק</b>" + (f" <i>(סגירה {close_date:%d/%m})</i>" if close_date else "") + "\n" + "\n".join(market_rows)
+        if market_rows else "",
         "💡 <b>מה זז באמת:</b>\n" + "\n".join(why) if why else "",
         "💼 <b>המניות שלי</b>\n" + "\n".join(
             fmt_holding(t, q) for t, q in sorted(holdings.items(), key=lambda kv: abs(kv[1]["pct"]), reverse=True)
@@ -291,28 +296,33 @@ def render(today: datetime, market_rows: list, close_date, holdings: dict, ai: d
         *[article(c, need_id=False) for c in ai.get("companies") or []],
     ]
 
-    sections = [
-        f"🌅 <b>בריף בוקר מנהלים - {today:%d/%m/%Y}</b> ☕",
-        section("🇮🇱 <b>ישראל</b>", [article(e) for e in ai.get("israel") or []]),
-        section("🤖 <b>בינה מלאכותית (AI)</b>", [article(e) for e in ai.get("ai") or []]),
-        section("🌍 <b>אקטואליה עולמית</b>", [article(e) for e in ai.get("world") or []]),
-        section("📈 <b>מעקב חברות ותיק מניות</b>", stocks),
-        section("⚠️ <b>מה לא עבד היום:</b>", ["\n".join(FAILURES)] if FAILURES else []),
+    date = f"<i>{today:%d/%m/%Y}</i>"
+    topics = [
+        (f"🇮🇱 <b>ישראל</b> · {date}", [article(e) for e in ai.get("israel") or []]),
+        (f"🤖 <b>בינה מלאכותית (AI)</b> · {date}", [article(e) for e in ai.get("ai") or []]),
+        (f"🦾 <b>טכנולוגיה ורובוטיקה</b> · {date}", [article(e) for e in ai.get("tech") or []]),
+        (f"🌍 <b>אקטואליה עולמית</b> · {date}", [article(e) for e in ai.get("world") or []]),
+        (f"📈 <b>שוק ההון ותיק המניות</b> · {date}", stocks),
+        ("⚠️ <b>בוט החדשות — מה לא עבד היום:</b>", ["\n".join(FAILURES)] if FAILURES else []),
     ]
-    return [s for s in sections if s]
+    messages = [[title, SEP, *[b for b in blocks if b]] for title, blocks in topics if any(blocks)]
+    if messages:
+        messages[0].insert(0, f"🌅 <b>בוקר טוב מאור — בריף בוקר</b> ☕")
+    return messages
 
 def rtl(text: str) -> str:
     return "\n".join(RLM + line if line else line for line in text.split("\n"))
 
-def chunks(sections: list, limit: int = 3900) -> list:
-    # shortcut: מדור בודד ארוך מ-4096 תווים עדיין ייכשל; לפצל לפי שורות אם זה יקרה
+def chunks(blocks: list, limit: int = 3900) -> list:
+    """הודעה אחת לנושא; רק אם היא ארוכה מהמותר בטלגרם — מפוצלת בין כתבות."""
+    # shortcut: בלוק בודד ארוך מ-4096 תווים עדיין ייכשל; לפצל לפי שורות אם זה יקרה
     out, cur = [], ""
-    for s in sections:
-        if cur and len(cur) + len(s) + len(SEP) + 4 > limit:
+    for b in blocks:
+        if cur and len(cur) + len(b) + 2 > limit:
             out.append(cur)
-            cur = s
+            cur = b
         else:
-            cur = f"{cur}\n\n{SEP}\n\n{s}" if cur else s
+            cur = f"{cur}\n\n{b}" if cur else b
     return [rtl(c) for c in (out + [cur] if cur else out)]
 
 # =============================================================================
@@ -355,7 +365,7 @@ def build() -> list:
     except Exception as ex:
         fail("סיכום AI", ex)
         ai = {}
-    return chunks(render(now.astimezone(IL_TZ), market_rows, close_date, holdings, ai))
+    return [part for msg in render(now.astimezone(IL_TZ), market_rows, close_date, holdings, ai) for part in chunks(msg)]
 
 if __name__ == "__main__":
     try:

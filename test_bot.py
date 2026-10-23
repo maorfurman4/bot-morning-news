@@ -36,4 +36,13 @@ parts = bot.chunks(["x" * 2000, "y" * 2000, "z\nOpenAI"])
 assert len(parts) == 2 and all(len(p) <= 3900 for p in parts)
 assert all(line.startswith(bot.RLM) for line in parts[1].split("\n") if line)
 
+# הודעה נפרדת לכל נושא; נושא בלי כתבות לא נשלח; הפתיח רק בהודעה הראשונה
+msgs = bot.render(now, [], None, {}, {
+    "israel": [{"id": "w1", "emoji": "🛡️", "title": "א", "bottom_line": "ב"}],
+    "ai": [{"id": "w99", "title": "מומצא", "bottom_line": "x"}],
+    "world": [{"id": "w1", "emoji": "🌍", "title": "ג", "bottom_line": "ד"}],
+})
+assert len(msgs) == 2 and msgs[0][1].startswith("🇮🇱") and msgs[1][0].startswith("🌍")
+assert msgs[0][0].startswith("🌅")
+
 print("ok")
