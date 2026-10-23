@@ -2,7 +2,7 @@ name: Daily Morning Briefing Analyst
 
 on:
   schedule:
-    # רץ כל בוקר בשעה 04:30 UTC (שזה 07:30 שעון ישראל)
+    # 02:30 UTC = 05:30 שעון קיץ / 04:30 שעון חורף
     - cron: '30 2 * * *'
   workflow_dispatch: # מאפשר לך להריץ ידנית בלחיצת כפתור
 
@@ -27,7 +27,6 @@ jobs:
     - name: Run Analyst Agent
       env:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
         TELEGRAM_TOKEN_NEWS: ${{ secrets.TELEGRAM_TOKEN_NEWS }}
         CHAT_ID_NEWS: ${{ secrets.CHAT_ID_NEWS }}
       run: python bot.py
