@@ -11,11 +11,13 @@
    המניות שלי (`HOLDINGS`); מניה שזזה מעל 3% (`DRAMATIC`) מקבלת הסבר מכתבות
 6. ⚠️ מה לא עבד (רק אם משהו נכשל)
 
-בכל נושא 3–6 ידיעות, כל אחת: כותרת מודגשת, "השורה התחתונה" וקישור לכתבה + שם המקור.
+בכל נושא 5–8 ידיעות, כל אחת: כותרת מודגשת, "השורה התחתונה" וקישור לכתבה + שם המקור.
+כל נושא מסוכם בקריאת AI נפרדת (gpt-5, ואם לא זמין — gpt-4o), וכל ידיעה נבדקת מול כותרת הכתבה
+שהקישור שלה מוצג; ידיעה שלא מתאימה לכתבה אמיתית לא נשלחת.
 
 ## מאיפה המידע
 - **מספרים**: Yahoo Finance (yfinance) — מחושבים בקוד, לא ע"י ה-AI
-- **חדשות**: RSS קבוע (`FEEDS`: גלובס, ynet, Times of Israel, BBC, CNBC, TechCrunch, MIT Technology Review, IEEE Spectrum) + Google News מסונן למקורות אמינים (`TRUSTED`). רק 26 השעות האחרונות
+- **חדשות**: כ-30 מקורות ב-`FEEDS` — ישראל: הכותרות הראשיות של Google News ישראל (ynet, mako, מעריב, כאן, גלובס...), ynet, גלובס, הארץ, Times of Israel, Reuters, כלכליסט, TheMarker; AI: TechCrunch, MIT Technology Review, Ars Technica, Wired, The Verge; טכנולוגיה: BBC, TechCrunch, IEEE Spectrum, Ars Technica, Wired, Engadget, The Verge; עולם: BBC, Reuters, Guardian, Al Jazeera, NPR, CNBC; שוק: CNBC, MarketWatch + Google News מסונן למקורות אמינים (`TRUSTED`). רק 26 השעות האחרונות
 - **סיכום**: GPT-4o בוחר ומתרגם רק מתוך הכתבות שקיבל. הקישור והמקור ליד כל פריט מגיעים מהנתונים, לא מה-AI
 
 ## מתי

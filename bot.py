@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 בריף חדשות בוקר — נתוני שוק אמיתיים + חדשות ממקורות אמינים, מסוכמים בעברית.
-המספרים מחושבים בקוד; GPT רק בוחר, מתרגם ומסביר — ורק מתוך הכתבות שקיבל.
+הודעה נפרדת לכל נושא. המספרים מחושבים בקוד; ה-AI רק בוחר, מתרגם ומסביר — ורק מתוך הכתבות שקיבל,
+וכל ידיעה נבדקת מול הכתבה שהקישור שלה מוצג.
 הרצה מקומית בלי שליחה: python bot.py --dry-run
 """
 
@@ -11,6 +12,7 @@ import os
 import re
 import sys
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from urllib.parse import quote_plus
@@ -28,7 +30,9 @@ CHAT_ID = os.environ.get("CHAT_ID_NEWS", "").strip()
 
 IL_TZ = ZoneInfo("Asia/Jerusalem")
 MAX_AGE = timedelta(hours=26)
-DRAMATIC = 3.0  # % — מניה שזזה יותר מזה מקבלת הסבר
+PER_FEED = 10    # כמה כתבות לקחת מכל מקור (לפי הסדר של המקור עצמו)
+DRAMATIC = 3.0   # % — מניה שזזה יותר מזה מקבלת הסבר
+MODELS = ["gpt-5", "gpt-4o"]  # הראשון שעובד עם המפתח
 
 # (סימול, שם, סוג) — הסוג קובע איך מציגים את השינוי. שמות בעברית כדי שהשורה תישאר מימין לשמאל
 MARKETS = [
@@ -55,36 +59,70 @@ HOLDINGS = {
     "GOOG": ("Alphabet", "גוגל"),
 }
 
+def gn(query: str = "", lang: str = "en") -> str:
+    """כתובת Google News: חיפוש (24 שעות) או הכותרות הראשיות."""
+    loc = "hl=he&gl=IL&ceid=IL:he" if lang == "he" else "hl=en-US&gl=US&ceid=US:en"
+    if not query:
+        return f"https://news.google.com/rss?{loc}"
+    return f"https://news.google.com/rss/search?q={quote_plus(query + ' when:1d')}&{loc}"
+
+# (שם מקור, כתובת). שם None = מאגר (Google News) — שם המקור נלקח מכל כתבה ורק מקורות מ-TRUSTED נשארים
 FEEDS = {
     "israel": [
-        ("גלובס", "https://www.globes.co.il/webservice/rss/rssfeeder.asmx/FeederNode?iID=2"),
+        (None, gn(lang="he")),  # הכותרות הראשיות בישראל, מדורגות לפי חשיבות
         ("ynet", "https://www.ynet.co.il/Integration/StoryRss2.xml"),
-        # ה-RSS שלהם חוסם את שרתי GitHub (403), אז דרך Google News
-        ("Times of Israel", "https://news.google.com/rss/search?q=site:timesofisrael.com+when:1d&hl=en-US&gl=US&ceid=US:en"),
+        ("גלובס", "https://www.globes.co.il/webservice/rss/rssfeeder.asmx/FeederNode?iID=585"),
+        ("Haaretz", "https://www.haaretz.com/srv/haaretz-latest-headlines"),
+        (None, gn("site:timesofisrael.com")),  # ה-RSS שלהם חוסם את שרתי GitHub
+        (None, gn("site:reuters.com Israel")),
+        (None, gn("site:calcalist.co.il", "he")),
+        (None, gn("site:themarker.com", "he")),
     ],
     "ai": [
         ("TechCrunch", "https://techcrunch.com/category/artificial-intelligence/feed/"),
         ("MIT Technology Review", "https://www.technologyreview.com/topic/artificial-intelligence/feed"),
+        ("Ars Technica", "https://arstechnica.com/ai/feed/"),
+        ("Wired", "https://www.wired.com/feed/tag/ai/latest/rss"),
+        ("The Verge", "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml"),
+        (None, gn("artificial intelligence")),
     ],
     "tech": [
         ("BBC", "https://feeds.bbci.co.uk/news/technology/rss.xml"),
         ("TechCrunch", "https://techcrunch.com/category/robotics/feed/"),
         ("IEEE Spectrum", "https://spectrum.ieee.org/feeds/topic/robotics.rss"),
+        ("Ars Technica", "https://feeds.arstechnica.com/arstechnica/index"),
+        ("Wired", "https://www.wired.com/feed/rss"),
+        ("Engadget", "https://www.engadget.com/rss.xml"),
+        ("The Verge", "https://www.theverge.com/rss/tech/index.xml"),
+        (None, gn("robotics")),
     ],
     "world": [
         ("BBC", "https://feeds.bbci.co.uk/news/world/rss.xml"),
+        (None, gn("site:reuters.com world")),
+        ("The Guardian", "https://www.theguardian.com/world/rss"),
+        ("Al Jazeera", "https://www.aljazeera.com/xml/rss/all.xml"),
+        ("NPR", "https://feeds.npr.org/1004/rss.xml"),
         ("CNBC", "https://www.cnbc.com/id/100003114/device/rss/rss.html"),
+    ],
+    "market": [
+        ("CNBC", "https://www.cnbc.com/id/20910258/device/rss/rss.html"),
+        ("MarketWatch", "https://feeds.content.dowjones.io/public/rss/mw_topstories"),
+        (None, gn("stock market today")),
+        (None, gn("Wall Street stocks close")),
+        (None, gn("Tel Aviv Stock Exchange")),
     ],
 }
 
-MARKET_QUERIES = ["stock market today", "Wall Street stocks close", "Tel Aviv Stock Exchange"]
-
-# מתוצאות Google News נשארות רק כתבות ממקורות אלה
+# מקורות מהימנים — רק הם נשארים מהמאגרים
 TRUSTED = (
     "reuters", "bloomberg", "cnbc", "wall street journal", "wsj", "marketwatch", "yahoo",
     "financial times", "barron", "ap news", "associated press", "investing.com", "axios",
-    "techcrunch", "the verge", "fortune", "business insider", "times of israel",
-    "globes", "calcalist", "themarker", "גלובס", "כלכליסט", "דה מרקר",
+    "bbc", "guardian", "npr", "al jazeera", "politico", "economist", "nikkei", "semafor",
+    "techcrunch", "the verge", "wired", "ars technica", "engadget", "mit technology review",
+    "ieee", "fortune", "business insider", "the information",
+    "times of israel", "haaretz", "jerusalem post", "i24", "ynet", "mako", "n12",
+    "globes", "calcalist", "themarker", "הארץ", "גלובס", "כלכליסט", "דה מרקר",
+    "מעריב", "כאן 11", "וואלה", "ישראל היום", "חדשות 13",
 )
 
 SEP = "〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️"
@@ -104,64 +142,86 @@ def fail(section: str, ex) -> None:
     FAILURES.append(f"• <b>{esc(section)}</b>: {esc(detail)}")
 
 # =============================================================================
-# ─── חדשות: RSS ממקורות קבועים + Google News מסונן ───────────────────────────
+# ─── חדשות ───────────────────────────────────────────────────────────────────
 # =============================================================================
+
+ATOM = "{http://www.w3.org/2005/Atom}"
 
 def fetch(url: str) -> bytes:
     resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
     resp.raise_for_status()
     return resp.content
 
+def _date(text: str) -> datetime | None:
+    text = (text or "").strip()
+    try:
+        d = parsedate_to_datetime(text)
+    except (TypeError, ValueError):
+        try:
+            d = datetime.fromisoformat(text)  # Atom
+        except ValueError:
+            return None
+    return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+
+def _href(entry) -> str:
+    link = entry.find(f"{ATOM}link")  # Element בלי ילדים הוא falsy, לכן is None
+    return "" if link is None else link.get("href", "")
+
 def parse_rss(content: bytes, source: str | None = None) -> list:
-    """source=None: שם המקור נלקח מכל כתבה (Google News)."""
+    """RSS או Atom. source=None: שם המקור נלקח מכל כתבה (Google News)."""
+    root = ET.fromstring(content)
+    raw = [
+        (it.findtext("title"), it.findtext("link"), it.findtext("source"), it.findtext("pubDate"), it.findtext("description"))
+        for it in root.iter("item")
+    ] + [
+        (e.findtext(f"{ATOM}title"), _href(e), None,
+         e.findtext(f"{ATOM}published") or e.findtext(f"{ATOM}updated"),
+         e.findtext(f"{ATOM}summary") or e.findtext(f"{ATOM}content"))
+        for e in root.iter(f"{ATOM}entry")
+    ]
     items = []
-    for it in ET.fromstring(content).iter("item"):
-        title = (it.findtext("title") or "").strip()
-        src = source or (it.findtext("source") or "").strip()
+    for title, link, src, date, desc in raw:
+        title, src, published = (title or "").strip(), source or (src or "").strip(), _date(date)
         if source is None and src and title.endswith(f" - {src}"):
             title = title[: -len(src) - 3]
-        try:
-            published = parsedate_to_datetime((it.findtext("pubDate") or "").strip())
-        except (TypeError, ValueError):
+        if not published or not title:
             continue
-        if published.tzinfo is None:
-            published = published.replace(tzinfo=timezone.utc)
-        summary = html.unescape(re.sub(r"<[^>]+>", "", it.findtext("description") or "")).strip()
+        summary = html.unescape(re.sub(r"<[^>]+>", " ", desc or ""))
         items.append({
-            "title": html.unescape(title), "link": (it.findtext("link") or "").strip(),
-            "source": src, "published": published, "summary": summary[:300],
+            "title": html.unescape(title), "link": (link or "").strip(), "source": src,
+            "published": published, "summary": re.sub(r"\s+", " ", summary).strip()[:500],
         })
     return items
 
+def trusted(source: str) -> bool:
+    # מילה שלמה: "npr" לא אמור להתאים ל-"Nonproliferation"
+    s = source.lower()
+    return any(re.search(rf"\b{re.escape(t)}\b", s) for t in TRUSTED)
+
 def fresh(items: list, now: datetime) -> list:
+    """רק מהיממה האחרונה, בלי כפילויות; שומר על סדר המקור (Google News מדרג לפי חשיבות)."""
     seen, out = set(), []
-    for i in sorted(items, key=lambda i: i["published"], reverse=True):
-        if now - i["published"] <= MAX_AGE and i["title"] and i["title"] not in seen:
-            seen.add(i["title"])
+    for i in items:
+        key = i["title"].strip().lower()
+        if now - i["published"] <= MAX_AGE and key not in seen:
+            seen.add(key)
             out.append(i)
     return out
 
-def get_feed(category: str, now: datetime, limit: int = 15) -> list:
-    items = []
-    for name, url in FEEDS[category]:
-        try:
-            items += parse_rss(fetch(url), name)
-        except Exception as ex:
-            fail(f"מקור {name}", ex)
+def read_feed(name: str | None, url: str, now: datetime, limit: int = PER_FEED) -> list:
+    try:
+        items = parse_rss(fetch(url), name)
+    except Exception as ex:
+        fail(f"מקור {name or 'Google News'}", ex)
+        return []
+    if name is None:
+        items = [i for i in items if trusted(i["source"])]
     return fresh(items, now)[:limit]
 
-def trusted(source: str) -> bool:
-    s = source.lower()
-    return any(t in s for t in TRUSTED)
-
-def gnews(query: str, now: datetime, limit: int = 6) -> list:
-    url = f"https://news.google.com/rss/search?q={quote_plus(query + ' when:1d')}&hl=en-US&gl=US&ceid=US:en"
-    try:
-        items = parse_rss(fetch(url))
-    except Exception as ex:
-        fail(f"Google News ({query})", ex)
-        return []
-    return fresh([i for i in items if trusted(i["source"])], now)[:limit]
+def get_feed(category: str, now: datetime) -> list:
+    with ThreadPoolExecutor(8) as pool:
+        per_feed = list(pool.map(lambda f: read_feed(*f, now), FEEDS[category]))
+    return fresh([i for items in per_feed for i in items], now)
 
 # =============================================================================
 # ─── נתוני שוק (Yahoo Finance) ───────────────────────────────────────────────
@@ -212,29 +272,51 @@ def fmt_holding(ticker: str, q: dict) -> str:
     return f"{icon} {HOLDINGS[ticker][1]} ({ticker}): <b>{q['last']:.2f} דולר</b> | {move(up, f'{abs(q['pct']):.1f}%')}"
 
 # =============================================================================
-# ─── סיכום AI ────────────────────────────────────────────────────────────────
+# ─── סיכום AI — קריאה נפרדת לכל נושא ─────────────────────────────────────────
 # =============================================================================
 
-PROMPT = """
-אתה "סוכן אנליסט" אישי ויוקרתי שכותב בריף בוקר למאור — משקיע פרטי שרוצה להבין מה קרה ולמה זה חשוב.
+TOPICS = {
+    "israel": ("🇮🇱", "ישראל",
+               "רק ידיעות על ישראל עצמה: ביטחון, מדיניות ופוליטיקה, כלכלה ישראלית, חברות ישראליות, חברה. "
+               "לא וול סטריט ולא חדשות עולם — גם אם פורסמו באתר ישראלי. איראן/ארה\"ב רק אם זה נוגע ישירות לישראל."),
+    "ai": ("🤖", "בינה מלאכותית (AI)",
+           "בינה מלאכותית: מודלים ומוצרים, חברות AI, השקעות וגיוסים, רגולציה, שבבי AI, מחקר פורץ דרך."),
+    "tech": ("🦾", "טכנולוגיה ורובוטיקה",
+             "טכנולוגיה ורובוטיקה שבינה מלאכותית אינה במרכזן: רובוטים, רכב חשמלי ואוטונומי, חלל, שבבים, סייבר, "
+             "מוצרים וחברות טק."),
+    "world": ("🌍", "אקטואליה עולמית",
+              "אקטואליה עולמית: גאופוליטיקה, מלחמות, בחירות, אסונות, כלכלה עולמית. בלי ישראל — יש לה הודעה נפרדת."),
+}
+
+RULES = """
+אתה עורך חדשות בכיר שכותב בריף בוקר בעברית למאור — משקיע פרטי שרוצה להבין מה באמת קרה ולמה זה חשוב.
 
 כללי ברזל:
-1. השתמש אך ורק בכתבות שקיבלת (לפי id) ובמספרים שקיבלת. אסור להמציא עובדות, מספרים או סיבות.
-2. הכל בעברית עסקית וזורמת. שם חברה באנגלית מותר בתוך משפט, לא בתחילתו.
-3. title — כותרת מושכת וקצרה. bottom_line — 2 שורות: מה קרה, ולמה זה חשוב / מה המשמעות.
-4. אל תחזור על אותו סיפור בשני מדורים. כל מדור נשלח כהודעה נפרדת: הכנס בו את כל הידיעות הקריטיות
-   והמשמעותיות (3 עד 6), לפי סדר חשיבות. לא למלא ברכילות או בידיעות שוליות רק כדי להגיע למספר.
-5. אם אין כתבה שמסבירה תזוזה של מניה — כתוב "אין סיבה מדווחת בכתבות מהיממה האחרונה" ואל תנחש.
+1. השתמש אך ורק בכתבות שקיבלת. אסור להמציא עובדות, מספרים, שמות או סיבות.
+2. source_title — העתק מילה במילה את ה-title של הכתבה שעליה הפריט מבוסס (כך מאמתים שהקישור נכון).
+3. title — כותרת עברית חדה וקצרה. bottom_line — 2 משפטים עם עובדות קונקרטיות מהכתבה (מי, מה, כמה, מתי)
+   ואז המשמעות האמיתית. אסור משפטי סרק כמו "זה חשוב כי זה עשוי להשפיע על...". אם הכתבה לא מספקת משמעות — רק עובדות.
+4. כמה כתבות על אותו סיפור → פריט אחד, מהכתבה המפורטת ביותר.
+5. הכל בעברית עסקית וזורמת. שם באנגלית מותר בתוך משפט, לא בתחילתו.
+"""
 
-החזר JSON בלבד במבנה:
+TOPIC_FORMAT = """
+בחר את 5 עד 8 הידיעות החשובות ביותר בנושא, לפי סדר חשיבות. אם יש פחות מ-5 ידיעות שבאמת שייכות לנושא — רק אותן;
+לעולם לא למלא בידיעות מנושא אחר או ברכילות.
+
+החזר JSON בלבד:
+{"items": [{"id": "...", "source_title": "...", "emoji": "🛡️", "title": "...", "bottom_line": "..."}]}
+"""
+
+MARKET_FORMAT = """
+קיבלת מספרי שוק אמיתיים (markets), את המניות שלי ושינוי יומי (holdings), כתבות שוק (market) וכתבות לכל מניה.
+
+החזר JSON בלבד:
 {
-  "israel": [{"id": "...", "emoji": "🛡️", "title": "...", "bottom_line": "..."}],   // ישראל — ביטחון, פוליטיקה, כלכלה
-  "ai":     [{"id": "...", "emoji": "...", "title": "...", "bottom_line": "..."}],    // בינה מלאכותית
-  "tech":   [{"id": "...", "emoji": "...", "title": "...", "bottom_line": "..."}],    // טכנולוגיה ורובוטיקה (לא AI)
-  "world":  [{"id": "...", "emoji": "...", "title": "...", "bottom_line": "..."}],    // אקטואליה עולמית וכלכלה
-  "market_why": [{"text": "...", "ids": ["..."]}],    // 2-3 משפטים: מה זז באמת בשווקים ולמה (מספרים מ-markets + כתבות market)
-  "companies": [{"ticker": "...", "id": "... או null", "emoji": "...", "title": "...", "bottom_line": "..."}]
-      // חובה פריט לכל מניה עם dramatic=true; ועוד כל ידיעה משמעותית על המניות שלי
+  "market_why": [{"text": "...", "ids": ["..."]}],   // 2-3 משפטים: מה זז באמת בשווקים ולמה, מבוסס על המספרים והכתבות
+  "companies": [{"ticker": "...", "id": "... או null", "source_title": "... או null", "emoji": "...", "title": "...", "bottom_line": "..."}]
+      // חובה פריט לכל מניה עם dramatic=true (אם אין כתבה שמסבירה: id=null ו-bottom_line "אין סיבה מדווחת בכתבות מהיממה האחרונה");
+      // ועוד כל ידיעה משמעותית על המניות שלי
 }
 """
 
@@ -247,32 +329,50 @@ def register(prefix: str, items: list) -> list:
         out.append({"id": f"{prefix}{n}", "source": i["source"], "title": i["title"], "summary": i["summary"]})
     return out
 
-def summarize(payload: dict) -> dict:
-    resp = requests.post(
-        "https://api.openai.com/v1/chat/completions",
-        headers={"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"},
-        json={
-            "model": "gpt-4o",
-            "temperature": 0.2,
+def ask_ai(system: str, payload: dict) -> dict:
+    last_error = None
+    for model in MODELS:
+        body = {
+            "model": model,
             "response_format": {"type": "json_object"},
             "messages": [
-                {"role": "system", "content": PROMPT},
+                {"role": "system", "content": system},
                 {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
             ],
-        },
-        timeout=180,
-    )
-    resp.raise_for_status()
-    return json.loads(resp.json()["choices"][0]["message"]["content"])
+        }
+        body.update({"reasoning_effort": "low"} if model.startswith("gpt-5") else {"temperature": 0.2})
+        resp = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"},
+            json=body, timeout=300,
+        )
+        if resp.ok:
+            return json.loads(resp.json()["choices"][0]["message"]["content"])
+        last_error = f"{model}: {resp.status_code} {resp.text[:150]}"
+        print(f"⚠️ {last_error} — trying next model")
+    raise RuntimeError(last_error)
 
 # =============================================================================
-# ─── בניית ההודעה (העיצוב המקורי של הבריף) ───────────────────────────────────
+# ─── בניית ההודעות (העיצוב המקורי של הבריף) ──────────────────────────────────
 # =============================================================================
+
+def _norm(text) -> str:
+    return re.sub(r"\s+", " ", str(text or "")).strip().lower()[:60]
+
+def resolve(e: dict):
+    """הכתבה שהפריט באמת מבוסס עליה — לפי source_title, גם אם ה-AI התבלבל ב-id."""
+    want = _norm(e.get("source_title"))
+    if not want:
+        return None
+    item = ITEMS.get(e.get("id"))
+    if item and _norm(item["title"]) == want:
+        return item
+    return next((i for i in ITEMS.values() if _norm(i["title"]) == want), None)
 
 def article(e: dict, need_id: bool = True) -> str:
-    item = ITEMS.get(e.get("id"))
-    if not e.get("title") or not e.get("bottom_line") or (need_id and not item):
-        return ""  # פריט בלי כתבה אמיתית מאחוריו — לא מציגים
+    item = resolve(e)
+    if not e.get("title") or not e.get("bottom_line") or (not item and (need_id or e.get("id"))):
+        return ""  # פריט שלא מתאים לכתבה אמיתית — לא מציגים
     out = f"🔻 <b>{esc(e.get('emoji', ''))} {esc(e['title'])}</b>\n💡 <i>השורה התחתונה:</i> {esc(e['bottom_line'])}"
     if item:
         out += f"\n🔗 <a href=\"{esc(item['link'])}\">לקריאת הכתבה המלאה</a> · {esc(item['source'])}"
@@ -297,17 +397,14 @@ def render(today: datetime, market_rows: list, close_date, holdings: dict, ai: d
     ]
 
     date = f"<i>{today:%d/%m/%Y}</i>"
-    topics = [
-        (f"🇮🇱 <b>ישראל</b> · {date}", [article(e) for e in ai.get("israel") or []]),
-        (f"🤖 <b>בינה מלאכותית (AI)</b> · {date}", [article(e) for e in ai.get("ai") or []]),
-        (f"🦾 <b>טכנולוגיה ורובוטיקה</b> · {date}", [article(e) for e in ai.get("tech") or []]),
-        (f"🌍 <b>אקטואליה עולמית</b> · {date}", [article(e) for e in ai.get("world") or []]),
+    topics = [(f"{icon} <b>{name}</b> · {date}", [article(e) for e in ai.get(key) or []]) for key, (icon, name, _) in TOPICS.items()]
+    topics += [
         (f"📈 <b>שוק ההון ותיק המניות</b> · {date}", stocks),
         ("⚠️ <b>בוט החדשות — מה לא עבד היום:</b>", ["\n".join(FAILURES)] if FAILURES else []),
     ]
     messages = [[title, SEP, *[b for b in blocks if b]] for title, blocks in topics if any(blocks)]
     if messages:
-        messages[0].insert(0, f"🌅 <b>בוקר טוב מאור — בריף בוקר</b> ☕")
+        messages[0].insert(0, "🌅 <b>בוקר טוב מאור — בריף בוקר</b> ☕")
     return messages
 
 def rtl(text: str) -> str:
@@ -347,25 +444,40 @@ def build() -> list:
 
     print("📥 News...")
     news = {cat: register(cat[0], get_feed(cat, now)) for cat in FEEDS}
-    market_news = fresh([i for q in MARKET_QUERIES for i in gnews(q, now)], now)[:12]
-    news["market"] = register("m", market_news)
-    news["holdings"] = {t: register(f"h{t}_", gnews(f'"{name}" stock', now, 4)) for t, (name, _) in HOLDINGS.items()}
+    with ThreadPoolExecutor(8) as pool:
+        per_stock = dict(zip(HOLDINGS, pool.map(lambda h: read_feed(None, gn(f'"{h[0]}" stock'), now, 5), HOLDINGS.values())))
+    stock_news = {t: register(f"h{t}_", items) for t, items in per_stock.items()}
+    print("📰 " + ", ".join(f"{k}: {len(v)}" for k, v in news.items()) + f", stocks: {sum(map(len, stock_news.values()))}")
 
-    payload = {
+    jobs = {key: (RULES + f"\nהנושא: {name} — {rule}\n" + TOPIC_FORMAT, {"articles": news[key]})
+            for key, (_, name, rule) in TOPICS.items()}
+    jobs["market"] = (RULES + MARKET_FORMAT, {
         "markets": [re.sub(r"<[^>]+>", "", r) for r in market_rows],
         "holdings": [
             {"ticker": t, "name": HOLDINGS[t][0], "change_pct": round(q["pct"], 2), "dramatic": abs(q["pct"]) >= DRAMATIC}
             for t, q in holdings.items()
         ],
-        "news": news,
-    }
-    print(f"🧠 Summarizing {len(ITEMS)} articles...")
-    try:
-        ai = summarize(payload)
-    except Exception as ex:
-        fail("סיכום AI", ex)
-        ai = {}
-    return [part for msg in render(now.astimezone(IL_TZ), market_rows, close_date, holdings, ai) for part in chunks(msg)]
+        "market": news["market"],
+        "stock_news": stock_news,
+    })
+
+    print("🧠 Summarizing...")
+    ai = {}
+    with ThreadPoolExecutor(len(jobs)) as pool:
+        futures = {key: pool.submit(ask_ai, *job) for key, job in jobs.items()}
+    for key, fut in futures.items():
+        try:
+            result = fut.result()
+        except Exception as ex:
+            fail(f"סיכום AI ({key})", ex)
+            continue
+        if key == "market":
+            ai.update(result)
+        else:
+            ai[key] = result.get("items", [])
+    messages = render(now.astimezone(IL_TZ), market_rows, close_date, holdings, ai)
+    print("✅ shown: " + ", ".join(f"{m[1 if i == 0 else 0][:12]}: {sum(b.startswith('🔻') for b in m)}" for i, m in enumerate(messages)))
+    return [part for msg in messages for part in chunks(msg)]
 
 if __name__ == "__main__":
     try:
