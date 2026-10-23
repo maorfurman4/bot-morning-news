@@ -52,7 +52,8 @@ FEEDS = {
     "israel": [
         ("גלובס", "https://www.globes.co.il/webservice/rss/rssfeeder.asmx/FeederNode?iID=2"),
         ("ynet", "https://www.ynet.co.il/Integration/StoryRss2.xml"),
-        ("Times of Israel", "https://www.timesofisrael.com/feed/"),
+        # ה-RSS שלהם חוסם את שרתי GitHub (403), אז דרך Google News
+        ("Times of Israel", "https://news.google.com/rss/search?q=site:timesofisrael.com+when:1d&hl=en-US&gl=US&ceid=US:en"),
     ],
     "world": [("BBC", "https://feeds.bbci.co.uk/news/world/rss.xml")],
     "business": [
