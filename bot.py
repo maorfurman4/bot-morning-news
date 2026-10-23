@@ -30,22 +30,29 @@ IL_TZ = ZoneInfo("Asia/Jerusalem")
 MAX_AGE = timedelta(hours=26)
 DRAMATIC = 3.0  # % — מניה שזזה יותר מזה מקבלת הסבר
 
-# (סימול, שם, סוג) — הסוג קובע איך מציגים את השינוי
+# (סימול, שם, סוג) — הסוג קובע איך מציגים את השינוי. שמות בעברית כדי שהשורה תישאר מימין לשמאל
 MARKETS = [
-    ("^GSPC", "S&P 500", "index"),
+    ("^GSPC", "אס אנד פי 500", "index"),
     ("^IXIC", "נאסד\"ק", "index"),
     ("^DJI", "דאו ג'ונס", "index"),
     ("TA35.TA", "ת\"א-35", "index"),
-    ("^VIX", "VIX (מדד הפחד)", "index"),
+    ("^VIX", "מדד הפחד (VIX)", "index"),
     ("^TNX", "אג\"ח ארה\"ב 10 שנים", "yield"),
     ("ILS=X", "דולר/שקל", "fx"),
     ("BZ=F", "נפט ברנט", "usd"),
 ]
 
-# המניות שלי — השם משמש לחיפוש חדשות
+# המניות שלי: סימול → (שם לחיפוש חדשות, שם בעברית)
 HOLDINGS = {
-    "INTC": "Intel", "MBLY": "Mobileye", "TSLA": "Tesla", "SPCX": "SpaceX", "TEVA": "Teva",
-    "NVO": "Novo Nordisk", "QBTS": "D-Wave Quantum", "AMZN": "Amazon", "GOOG": "Alphabet",
+    "INTC": ("Intel", "אינטל"),
+    "MBLY": ("Mobileye", "מובילאיי"),
+    "TSLA": ("Tesla", "טסלה"),
+    "SPCX": ("SpaceX", "ספייס אקס"),
+    "TEVA": ("Teva", "טבע"),
+    "NVO": ("Novo Nordisk", "נובו נורדיסק"),
+    "QBTS": ("D-Wave Quantum", "די-וייב"),
+    "AMZN": ("Amazon", "אמזון"),
+    "GOOG": ("Alphabet", "גוגל"),
 }
 
 FEEDS = {
@@ -55,14 +62,13 @@ FEEDS = {
         # ה-RSS שלהם חוסם את שרתי GitHub (403), אז דרך Google News
         ("Times of Israel", "https://news.google.com/rss/search?q=site:timesofisrael.com+when:1d&hl=en-US&gl=US&ceid=US:en"),
     ],
-    "world": [("BBC", "https://feeds.bbci.co.uk/news/world/rss.xml")],
-    "business": [
-        ("CNBC", "https://www.cnbc.com/id/100003114/device/rss/rss.html"),
-        ("CNBC", "https://www.cnbc.com/id/10000664/device/rss/rss.html"),
-    ],
-    "tech": [
+    "ai": [
         ("TechCrunch", "https://techcrunch.com/category/artificial-intelligence/feed/"),
         ("BBC", "https://feeds.bbci.co.uk/news/technology/rss.xml"),
+    ],
+    "world": [
+        ("BBC", "https://feeds.bbci.co.uk/news/world/rss.xml"),
+        ("CNBC", "https://www.cnbc.com/id/100003114/device/rss/rss.html"),
     ],
 }
 
@@ -77,6 +83,7 @@ TRUSTED = (
 )
 
 SEP = "〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️"
+RLM = "‏"  # תו כיוון: שורה שמתחילה באנגלית (OpenAI, S&P) לא תתהפך לשמאל-לימין
 
 def esc(text) -> str:
     return html.escape(str(text))
@@ -161,16 +168,19 @@ def quote(symbol: str) -> tuple:
         raise ValueError("אין מספיק נתונים")
     return float(closes.iloc[-1]), float(closes.iloc[-2]), closes.index[-1].date()
 
+def move(up: bool, amount: str) -> str:
+    return f"{'עלייה' if up else 'ירידה'} של {amount}"
+
 def fmt_market(name: str, kind: str, last: float, prev: float) -> str:
-    pct = (last - prev) / prev * 100
-    arrow = "▲" if last >= prev else "▼"
+    up = last >= prev
+    icon = "🟢" if up else "🔴"
     if kind == "yield":
-        return f"{name}: <b>{last:.2f}%</b> {arrow} {abs(last - prev) * 100:.0f} נ\"ב"
-    value = {"fx": f"{last:.3f} ₪", "usd": f"${last:.2f}"}.get(kind, f"{last:,.2f}" if last < 100 else f"{last:,.0f}")
-    return f"{name}: <b>{value}</b> {arrow} {abs(pct):.2f}%"
+        return f"{icon} {name}: <b>{last:.2f}%</b> | {move(up, f'{abs(last - prev) * 100:.0f} נ\"ב')}"
+    value = {"fx": f"{last:.3f} ₪", "usd": f"{last:.2f} דולר"}.get(kind, f"{last:,.2f}" if last < 100 else f"{last:,.0f}")
+    return f"{icon} {name}: <b>{value}</b> | {move(up, f'{abs((last - prev) / prev * 100):.2f}%')}"
 
 def get_markets() -> tuple:
-    rows, data, close_date = [], [], None
+    rows, close_date = [], None
     for symbol, name, kind in MARKETS:
         try:
             last, prev, day = quote(symbol)
@@ -178,10 +188,8 @@ def get_markets() -> tuple:
             fail(f"שוק {name}", ex)
             continue
         close_date = close_date or day
-        line = fmt_market(name, kind, last, prev)
-        rows.append(line)
-        data.append(re.sub(r"<[^>]+>", "", line))
-    return rows, data, close_date
+        rows.append(fmt_market(name, kind, last, prev))
+    return rows, close_date
 
 def get_holdings() -> dict:
     out = {}
@@ -193,29 +201,33 @@ def get_holdings() -> dict:
             fail(f"מניה {ticker}", ex)
     return out
 
+def fmt_holding(ticker: str, q: dict) -> str:
+    up = q["pct"] >= 0
+    icon = "🔥" if abs(q["pct"]) >= DRAMATIC else "🟢" if up else "🔴"
+    return f"{icon} {HOLDINGS[ticker][1]} ({ticker}): <b>{q['last']:.2f} דולר</b> | {move(up, f'{abs(q['pct']):.1f}%')}"
+
 # =============================================================================
 # ─── סיכום AI ────────────────────────────────────────────────────────────────
 # =============================================================================
 
 PROMPT = """
-אתה עורך חדשות וכלכלה שכותב בריף בוקר בעברית למאור — משקיע פרטי שרוצה להבין מה קרה ולמה זה חשוב.
+אתה "סוכן אנליסט" אישי ויוקרתי שכותב בריף בוקר למאור — משקיע פרטי שרוצה להבין מה קרה ולמה זה חשוב.
 
 כללי ברזל:
 1. השתמש אך ורק בכתבות שקיבלת (לפי id) ובמספרים שקיבלת. אסור להמציא עובדות, מספרים או סיבות.
-2. כל פריט: משפט או שניים בעברית עסקית וזורמת — מה קרה, ומקף — למה זה חשוב / מה המשמעות.
-3. אל תחזור על אותו סיפור בשני מדורים.
-4. אם אין כתבה שמסבירה תזוזה — כתוב במפורש "אין סיבה מדווחת בכתבות מהיממה האחרונה". לא לנחש.
+2. הכל בעברית עסקית וזורמת. שם חברה באנגלית מותר בתוך משפט, לא בתחילתו.
+3. title — כותרת מושכת וקצרה. bottom_line — 2 שורות: מה קרה, ולמה זה חשוב / מה המשמעות.
+4. אל תחזור על אותו סיפור בשני מדורים. בחר את הכתבות החשובות והמשמעותיות ביותר, לא סתם רכילות.
+5. אם אין כתבה שמסבירה תזוזה של מניה — כתוב "אין סיבה מדווחת בכתבות מהיממה האחרונה" ואל תנחש.
 
 החזר JSON בלבד במבנה:
 {
-  "top":      [{"id": "...", "text": "..."}],            // בדיוק 3 — הסיפורים הכי חשובים של הבוקר מכל המדורים
-  "market_why": [{"text": "...", "ids": ["..."]}],       // 2-3 תובנות: מה זז באמת בשווקים ולמה (שילוב המספרים עם כתבות market)
-  "holdings": [{"ticker": "...", "text": "...", "ids": ["..."]}],  // לכל מניה dramatic=true, ולכל מניה אחרת שיש עליה ידיעה משמעותית
-  "israel":   [{"id": "...", "text": "..."}],            // עד 3
-  "world":    [{"id": "...", "text": "..."}],            // עד 4
-  "business": [{"id": "...", "text": "..."}],            // עד 3
-  "tech":     [{"id": "...", "text": "..."}],            // עד 3 — טכנולוגיה ו-AI
-  "deep":     {"id": "...", "text": "..."}               // סיפור אחד לקריאה מעמיקה: 3-4 משפטים — מה קרה, הקשר, למה זה משמעותי
+  "israel": [{"id": "...", "emoji": "🛡️", "title": "...", "bottom_line": "..."}],   // בדיוק 3
+  "ai":     [{"id": "...", "emoji": "...", "title": "...", "bottom_line": "..."}],    // בדיוק 3 — בינה מלאכותית וטכנולוגיה
+  "world":  [{"id": "...", "emoji": "...", "title": "...", "bottom_line": "..."}],    // בדיוק 3 — אקטואליה עולמית וכלכלה
+  "market_why": [{"text": "...", "ids": ["..."]}],    // 2-3 משפטים: מה זז באמת בשווקים ולמה (מספרים מ-markets + כתבות market)
+  "companies": [{"ticker": "...", "id": "... או null", "emoji": "...", "title": "...", "bottom_line": "..."}]
+      // חובה פריט לכל מניה עם dramatic=true; ועוד עד 3 ידיעות משמעותיות על המניות שלי
 }
 """
 
@@ -247,57 +259,50 @@ def summarize(payload: dict) -> dict:
     return json.loads(resp.json()["choices"][0]["message"]["content"])
 
 # =============================================================================
-# ─── בניית ההודעה ────────────────────────────────────────────────────────────
+# ─── בניית ההודעה (העיצוב המקורי של הבריף) ───────────────────────────────────
 # =============================================================================
 
-def links(ids) -> str:
-    return " · ".join(f'<a href="{esc(ITEMS[i]["link"])}">{esc(ITEMS[i]["source"])}</a>' for i in ids if i in ITEMS)
-
-def bullets(entries, need_id: bool = True) -> list:
-    out = []
-    for e in entries or []:
-        ids = e.get("ids") or ([e["id"]] if e.get("id") else [])
-        if not e.get("text") or (need_id and not any(i in ITEMS for i in ids)):
-            continue  # פריט בלי כתבה אמיתית מאחוריו — לא מציגים
-        src = links(ids)
-        out.append(f"• {esc(e['text'])}" + (f" — {src}" if src else ""))
+def article(e: dict, need_id: bool = True) -> str:
+    item = ITEMS.get(e.get("id"))
+    if not e.get("title") or not e.get("bottom_line") or (need_id and not item):
+        return ""  # פריט בלי כתבה אמיתית מאחוריו — לא מציגים
+    out = f"🔻 <b>{esc(e.get('emoji', ''))} {esc(e['title'])}</b>\n💡 <i>השורה התחתונה:</i> {esc(e['bottom_line'])}"
+    if item:
+        out += f"\n🔗 <a href=\"{esc(item['link'])}\">לקריאת הכתבה המלאה</a> · {esc(item['source'])}"
     return out
 
-def section(title: str, lines: list) -> str:
-    return f"{title}\n" + "\n".join(lines) if lines else ""
+def section(title: str, blocks: list) -> str:
+    blocks = [b for b in blocks if b]
+    return f"{title}\n" + "\n\n".join(blocks) if blocks else ""
 
 def render(today: datetime, market_rows: list, close_date, holdings: dict, ai: dict) -> list:
-    notes = {h.get("ticker"): h for h in ai.get("holdings", [])}
-    stock_lines = []
-    for t, q in sorted(holdings.items(), key=lambda kv: abs(kv[1]["pct"]), reverse=True):
-        icon = "🔥" if abs(q["pct"]) >= DRAMATIC else "▫️"
-        line = f"{icon} <b>{t}</b> {'▲' if q['pct'] >= 0 else '▼'} {abs(q['pct']):.1f}% · ${q['last']:.2f}"
-        note = bullets([notes[t]], need_id=False) if t in notes else []
-        stock_lines.append(line + (f"\n   {note[0][2:]}" if note else ""))
+    why = []
+    for w in ai.get("market_why") or []:
+        src = " · ".join(f'<a href="{esc(ITEMS[i]["link"])}">{esc(ITEMS[i]["source"])}</a>' for i in w.get("ids") or [] if i in ITEMS)
+        if w.get("text"):
+            why.append(f"• {esc(w['text'])}" + (f" ({src})" if src else ""))
 
-    when = f" <i>(סגירה {close_date:%d/%m})</i>" if close_date else ""
-    markets = section(f"📊 <b>תמונת מצב שוקים</b>{when}", market_rows)
-    why = bullets(ai.get("market_why"), need_id=False)
-    if why:
-        markets += "\n\n💡 <b>מה זז באמת</b>\n" + "\n".join(why)
-
-    deep = ai.get("deep") or {}
-    deep_text = f"{esc(deep['text'])}\n🔗 {links([deep.get('id')])}" if deep.get("text") and deep.get("id") in ITEMS else ""
+    stocks = [
+        "📊 <b>מצב השוק</b>" + (f" <i>(סגירה {close_date:%d/%m})</i>" if close_date else "") + "\n" + "\n".join(market_rows),
+        "💡 <b>מה זז באמת:</b>\n" + "\n".join(why) if why else "",
+        "💼 <b>המניות שלי</b>\n" + "\n".join(
+            fmt_holding(t, q) for t, q in sorted(holdings.items(), key=lambda kv: abs(kv[1]["pct"]), reverse=True)
+        ) if holdings else "",
+        *[article(c, need_id=False) for c in ai.get("companies") or []],
+    ]
 
     sections = [
-        f"☀️ <b>בוקר טוב מאור — בריף בוקר</b> <i>{today:%d.%m.%Y}</i>",
-        section("🔝 <b>3 הדברים החשובים הבוקר</b>", bullets(ai.get("top"))),
-        markets,
-        section("💼 <b>המניות שלי</b>", stock_lines),
-        section("🇮🇱 <b>ישראל</b>", bullets(ai.get("israel"))),
-        section("🌍 <b>עולם</b>", bullets(ai.get("world"))),
-        section("💰 <b>עסקים</b>", bullets(ai.get("business"))),
-        section("🤖 <b>טכנולוגיה ו-AI</b>", bullets(ai.get("tech"))),
-        section("📖 <b>לקריאה מעמיקה</b>", [deep_text] if deep_text else []),
-        section("⚠️ <b>מה לא עבד היום:</b>", FAILURES),
-        "<i>שיהיה יום מעולה 🙌</i>",
+        f"🌅 <b>בריף בוקר מנהלים - {today:%d/%m/%Y}</b> ☕",
+        section("🇮🇱 <b>ישראל</b>", [article(e) for e in ai.get("israel") or []]),
+        section("🤖 <b>בינה מלאכותית (AI)</b>", [article(e) for e in ai.get("ai") or []]),
+        section("🌍 <b>אקטואליה עולמית</b>", [article(e) for e in ai.get("world") or []]),
+        section("📈 <b>מעקב חברות ותיק מניות</b>", stocks),
+        section("⚠️ <b>מה לא עבד היום:</b>", ["\n".join(FAILURES)] if FAILURES else []),
     ]
     return [s for s in sections if s]
+
+def rtl(text: str) -> str:
+    return "\n".join(RLM + line if line else line for line in text.split("\n"))
 
 def chunks(sections: list, limit: int = 3900) -> list:
     # shortcut: מדור בודד ארוך מ-4096 תווים עדיין ייכשל; לפצל לפי שורות אם זה יקרה
@@ -308,7 +313,7 @@ def chunks(sections: list, limit: int = 3900) -> list:
             cur = s
         else:
             cur = f"{cur}\n\n{SEP}\n\n{s}" if cur else s
-    return out + [cur] if cur else out
+    return [rtl(c) for c in (out + [cur] if cur else out)]
 
 # =============================================================================
 # ─── שליחה ───────────────────────────────────────────────────────────────────
@@ -327,19 +332,19 @@ def send_to_telegram(text: str) -> None:
 def build() -> list:
     now = datetime.now(timezone.utc)
     print("📊 Market data...")
-    market_rows, market_data, close_date = get_markets()
+    market_rows, close_date = get_markets()
     holdings = get_holdings()
 
     print("📥 News...")
     news = {cat: register(cat[0], get_feed(cat, now)) for cat in FEEDS}
     market_news = fresh([i for q in MARKET_QUERIES for i in gnews(q, now)], now)[:12]
     news["market"] = register("m", market_news)
-    news["holdings"] = {t: register(f"h{t}_", gnews(f'"{name}" stock', now, 4)) for t, name in HOLDINGS.items()}
+    news["holdings"] = {t: register(f"h{t}_", gnews(f'"{name}" stock', now, 4)) for t, (name, _) in HOLDINGS.items()}
 
     payload = {
-        "markets": market_data,
+        "markets": [re.sub(r"<[^>]+>", "", r) for r in market_rows],
         "holdings": [
-            {"ticker": t, "name": HOLDINGS[t], "change_pct": round(q["pct"], 2), "dramatic": abs(q["pct"]) >= DRAMATIC}
+            {"ticker": t, "name": HOLDINGS[t][0], "change_pct": round(q["pct"], 2), "dramatic": abs(q["pct"]) >= DRAMATIC}
             for t, q in holdings.items()
         ],
         "news": news,

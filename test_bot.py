@@ -20,17 +20,20 @@ kept = bot.fresh([i for i in items if bot.trusted(i["source"])], now)
 assert [i["link"] for i in kept] == ["https://x/1"]
 
 # פורמט שוק
-assert bot.fmt_market("S&P", "index", 7663.43, 7757.3).endswith("▼ 1.21%")
-assert "▲ 5 נ\"ב" in bot.fmt_market("10Y", "yield", 4.95, 4.90)
+assert bot.fmt_market("נאסד\"ק", "index", 7663.43, 7757.3).endswith("ירידה של 1.21%")
+assert "עלייה של 5 נ\"ב" in bot.fmt_market("10Y", "yield", 4.95, 4.90)
+assert bot.fmt_holding("MBLY", {"last": 6.55, "pct": -5.7}).startswith("🔥 מובילאיי (MBLY)")
 
 # פריט עם id שלא קיים (המצאה של ה-AI) לא מוצג; הקישור מגיע מהנתונים
 bot.register("w", kept)
-assert bot.bullets([{"id": "w1", "text": "א"}, {"id": "w99", "text": "ב"}]) == [
-    '• א — <a href="https://x/1">Reuters</a>'
-]
+assert bot.article({"id": "w99", "title": "א", "bottom_line": "ב"}) == ""
+assert bot.article({"id": "w1", "emoji": "🚗", "title": "א", "bottom_line": "ב"}) == (
+    '🔻 <b>🚗 א</b>\n💡 <i>השורה התחתונה:</i> ב\n🔗 <a href="https://x/1">לקריאת הכתבה המלאה</a> · Reuters'
+)
 
-# פיצול הודעות ארוכות
-parts = bot.chunks(["x" * 2000, "y" * 2000, "z" * 100])
+# פיצול הודעות ארוכות; כל שורה מתחילה בתו כיוון מימין לשמאל
+parts = bot.chunks(["x" * 2000, "y" * 2000, "z\nOpenAI"])
 assert len(parts) == 2 and all(len(p) <= 3900 for p in parts)
+assert all(line.startswith(bot.RLM) for line in parts[1].split("\n") if line)
 
 print("ok")
