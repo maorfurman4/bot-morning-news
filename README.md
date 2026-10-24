@@ -21,7 +21,7 @@
 - **סיכום**: ה-AI בוחר ומתרגם רק מתוך הכתבות שקיבל. הקישור והמקור ליד כל פריט מגיעים מהנתונים, לא מה-AI
 
 ## מתי
-כל בוקר ב-02:30 UTC (GitHub Actions, `.github/workflows/main.yml`). הרצה ידנית: Actions → "Daily Morning Briefing Analyst" → Run workflow.
+כל בוקר ב-02:30 UTC = 04:30 בחורף / 05:30 בקיץ (GitHub Actions, `.github/workflows/main.yml`). הרצה ידנית: Actions → "Daily Morning Briefing Analyst" → Run workflow.
 
 ## קבצים
 | קובץ | תפקיד |
