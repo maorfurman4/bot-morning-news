@@ -30,9 +30,9 @@ CHAT_ID = os.environ.get("CHAT_ID_NEWS", "").strip()
 
 IL_TZ = ZoneInfo("Asia/Jerusalem")
 MAX_AGE = timedelta(hours=26)
-PER_FEED = 10    # כמה כתבות לקחת מכל מקור (לפי הסדר של המקור עצמו)
+PER_FEED = 6     # כמה כתבות לקחת מכל מקור (לפי הסדר של המקור עצמו) — מספיק ל-5–8 ידיעות לנושא
 DRAMATIC = 3.0   # % — מניה שזזה יותר מזה מקבלת הסבר
-MODELS = ["gpt-5", "gpt-4o"]  # הראשון שעובד עם המפתח
+MODELS = ["gpt-5-mini", "gpt-4o-mini"]  # הראשון שעובד עם המפתח; mini — בערך חמישית מהמחיר
 
 # (סימול, שם, סוג) — הסוג קובע איך מציגים את השינוי. שמות בעברית כדי שהשורה תישאר מימין לשמאל
 MARKETS = [
@@ -189,7 +189,7 @@ def parse_rss(content: bytes, source: str | None = None) -> list:
         summary = html.unescape(re.sub(r"<[^>]+>", " ", desc or ""))
         items.append({
             "title": html.unescape(title), "link": (link or "").strip(), "source": src,
-            "published": published, "summary": re.sub(r"\s+", " ", summary).strip()[:500],
+            "published": published, "summary": re.sub(r"\s+", " ", summary).strip()[:200],
         })
     return items
 
@@ -326,7 +326,10 @@ def register(prefix: str, items: list) -> list:
     out = []
     for n, i in enumerate(items, 1):
         ITEMS[f"{prefix}{n}"] = i
-        out.append({"id": f"{prefix}{n}", "source": i["source"], "title": i["title"], "summary": i["summary"]})
+        entry = {"id": f"{prefix}{n}", "source": i["source"], "title": i["title"]}
+        if not i["summary"].startswith(i["title"][:40]):  # ב-Google News התקציר הוא שוב הכותרת — טוקנים לפח
+            entry["summary"] = i["summary"]
+        out.append(entry)
     return out
 
 def ask_ai(system: str, payload: dict) -> dict:
@@ -445,7 +448,7 @@ def build() -> list:
     print("📥 News...")
     news = {cat: register(cat[0], get_feed(cat, now)) for cat in FEEDS}
     with ThreadPoolExecutor(8) as pool:
-        per_stock = dict(zip(HOLDINGS, pool.map(lambda h: read_feed(None, gn(f'"{h[0]}" stock'), now, 5), HOLDINGS.values())))
+        per_stock = dict(zip(HOLDINGS, pool.map(lambda h: read_feed(None, gn(f'"{h[0]}" stock'), now, 3), HOLDINGS.values())))
     stock_news = {t: register(f"h{t}_", items) for t, items in per_stock.items()}
     print("📰 " + ", ".join(f"{k}: {len(v)}" for k, v in news.items()) + f", stocks: {sum(map(len, stock_news.values()))}")
 

@@ -30,6 +30,16 @@ ATOM = b"""<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>New robot</ti
 a = bot.parse_rss(ATOM, "The Verge")
 assert a[0]["link"] == "https://v/1" and a[0]["source"] == "The Verge" and a[0]["summary"] == "Walks & talks"
 
+# חיסכון בטוקנים: תקציר עד 200 תווים, ותקציר שרק חוזר על הכותרת (Google News) לא נשלח ל-AI
+long = bot.parse_rss(b"<rss><channel><item><title>T</title><link>https://x/9</link><pubDate>Fri, 23 Oct 2026 08:00:00 GMT</pubDate>"
+                     b"<description>" + b"a" * 900 + b"</description></item></channel></rss>", "BBC")
+assert len(long[0]["summary"]) == 200
+dup = {"title": "Intel rises 3%", "summary": "Intel rises 3%  Reuters", "source": "Reuters", "link": "l", "published": now}
+own = {"title": "Rain in Tel Aviv", "summary": "Heavy rain expected tomorrow", "source": "BBC", "link": "l", "published": now}
+sent = bot.register("z", [dup, own])
+assert "summary" not in sent[0] and sent[1]["summary"] == "Heavy rain expected tomorrow"
+assert bot.MODELS[0] == "gpt-5-mini"
+
 # פורמט שוק
 assert bot.fmt_market("נאסד\"ק", "index", 7663.43, 7757.3).endswith("ירידה של 1.21%")
 assert "עלייה של 5 נ\"ב" in bot.fmt_market("10Y", "yield", 4.95, 4.90)
