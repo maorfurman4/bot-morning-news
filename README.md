@@ -18,7 +18,7 @@
 ## מאיפה המידע
 - **מספרים**: Yahoo Finance (yfinance) — מחושבים בקוד, לא ע"י ה-AI
 - **חדשות**: כ-30 מקורות ב-`FEEDS` — ישראל: הכותרות הראשיות של Google News ישראל (ynet, mako, מעריב, כאן, גלובס...), ynet, גלובס, הארץ, Times of Israel, Reuters, כלכליסט, TheMarker; AI: TechCrunch, MIT Technology Review, Ars Technica, Wired, The Verge; טכנולוגיה: BBC, TechCrunch, IEEE Spectrum, Ars Technica, Wired, Engadget, The Verge; עולם: BBC, Reuters, Guardian, Al Jazeera, NPR, CNBC; שוק: CNBC, MarketWatch + Google News מסונן למקורות אמינים (`TRUSTED`). רק 26 השעות האחרונות
-- **סיכום**: GPT-4o בוחר ומתרגם רק מתוך הכתבות שקיבל. הקישור והמקור ליד כל פריט מגיעים מהנתונים, לא מה-AI
+- **סיכום**: ה-AI בוחר ומתרגם רק מתוך הכתבות שקיבל. הקישור והמקור ליד כל פריט מגיעים מהנתונים, לא מה-AI
 
 ## מתי
 כל בוקר ב-02:30 UTC (GitHub Actions, `.github/workflows/main.yml`). הרצה ידנית: Actions → "Daily Morning Briefing Analyst" → Run workflow.
