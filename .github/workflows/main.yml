@@ -3,7 +3,7 @@ name: Daily Morning Briefing Analyst
 on:
   schedule:
     # 02:30 UTC = 05:30 שעון קיץ / 04:30 שעון חורף
-    - cron: '30 2 * * *'
+    - cron: '30 1 * * *'
   workflow_dispatch: # מאפשר לך להריץ ידנית בלחיצת כפתור
 
 jobs:
