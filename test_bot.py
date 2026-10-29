@@ -41,15 +41,16 @@ assert "summary" not in sent[0] and sent[1]["summary"] == "Heavy rain expected t
 assert bot.MODELS[0] == "gpt-5-mini"
 
 # פורמט שוק
-assert bot.fmt_market("נאסד\"ק", "index", 7663.43, 7757.3).endswith("ירידה של 1.21%")
-assert "עלייה של 5 נ\"ב" in bot.fmt_market("10Y", "yield", 4.95, 4.90)
+assert bot.fmt_market("Nasdaq", "index", 7663.43, 7757.3) == "🔴 Nasdaq     7,663  ▼1.21%"
+assert bot.fmt_market("US 10Y", "yield", 4.95, 4.90).endswith("4.95%  ▲5bp")
+assert bot.fmt_market("S&P 500", "index", 7744, 7722).startswith("🟢 S&amp;P 500    7,744")  # יישור לפי האורך הנראה
 assert bot.fmt_holding("MBLY", {"last": 6.55, "pct": -5.7}).startswith("🔥 מובילאיי (MBLY)")
 
 # הקישור תמיד של הכתבה שהפריט באמת מבוסס עליה
 bot.register("w", kept)
 good = {"id": "w1", "source_title": "Tesla falls 5%", "emoji": "🚗", "title": "א", "bottom_line": "ב"}
 assert bot.article(good) == (
-    '🔻 <b>🚗 א</b>\n💡 <i>השורה התחתונה:</i> ב\n🔗 <a href="https://x/1">לקריאת הכתבה המלאה</a> · Reuters'
+    '🔹 <b>🚗 א</b>\n💡 <i>השורה התחתונה:</i> ב\n🔗 <a href="https://x/1">לקריאת הכתבה המלאה</a> · Reuters'
 )
 mixed = dict(good, id="w2")  # ה-AI התבלבל ב-id — מתוקן לפי source_title
 assert 'href="https://x/1"' in bot.article(mixed)
@@ -87,7 +88,13 @@ assert "מובילאיי צנחה" not in public_text and "מובילאיי צנ
 # סיפור שכבר הוזכר ב"מה זז"/"על מה לשים לב" לא חוזר כידיעה נפרדת; מקור בלי סוגריים
 dup_ai = {"watch": [{"text": "ריבית", "ids": ["w1"]}], "market_news": [dict(good, title="כפול")]}
 pub, _ = bot.render(now, [], None, {}, dup_ai, channel=True)
-assert "כפול" not in "\n".join(sum(pub, [])) and "ריבית — <a" in "\n".join(sum(pub, []))
+text = "\n".join(sum(pub, []))
+assert "כפול" not in text and text.count('href="https://x/1"') == 1 and "📚" in text  # מקור פעם אחת, בשורת המקורות
+# 5 ידיעות לכל היותר בנושא; טבלת השוק בלי תווי כיוון בתוכה
+msgs, _ = bot.render(now, ["🟢 a", "🔴 b"], None, {}, {"world": [dict(good, title=str(n)) for n in range(8)]})
+assert sum(b.startswith("🔹") for b in msgs[0]) == 5
+table = bot.chunks(next(m for m in bot.render(now, ["🟢 a", "🔴 b"], None, {}, {})[0]))[0]
+assert "\n🔴 b</pre>" in table
 bot.FAILURES.clear()
 
 print("ok")

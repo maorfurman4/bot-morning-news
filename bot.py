@@ -37,14 +37,14 @@ MODELS = ["gpt-5-mini", "gpt-4o-mini"]  # הראשון שעובד עם המפת�
 
 # (סימול, שם, סוג) — הסוג קובע איך מציגים את השינוי. שמות בעברית כדי שהשורה תישאר מימין לשמאל
 MARKETS = [
-    ("^GSPC", "אס אנד פי 500", "index"),
-    ("^IXIC", "נאסד\"ק", "index"),
-    ("^DJI", "דאו ג'ונס", "index"),
-    ("TA35.TA", "ת\"א-35", "index"),
-    ("^VIX", "מדד הפחד (VIX)", "index"),
-    ("^TNX", "אג\"ח ארה\"ב 10 שנים", "yield"),
-    ("ILS=X", "דולר/שקל", "fx"),
-    ("BZ=F", "נפט ברנט", "usd"),
+    ("^GSPC", "S&P 500", "index"),
+    ("^IXIC", "Nasdaq", "index"),
+    ("^DJI", "Dow", "index"),
+    ("TA35.TA", "TA-35", "index"),
+    ("^VIX", "VIX", "index"),
+    ("^TNX", "US 10Y", "yield"),
+    ("ILS=X", "USD/ILS", "fx"),
+    ("BZ=F", "Brent", "usd"),
 ]
 
 # המניות שלי: סימול → (שם לחיפוש חדשות, שם בעברית)
@@ -238,12 +238,14 @@ def move(up: bool, amount: str) -> str:
     return f"{'עלייה' if up else 'ירידה'} של {amount}"
 
 def fmt_market(name: str, kind: str, last: float, prev: float) -> str:
+    """שורה בטבלה (בתוך <pre>): 🟢 S&P 500     7,744  ▲0.28%"""
     up = last >= prev
-    icon = "🟢" if up else "🔴"
     if kind == "yield":
-        return f"{icon} {name}: <b>{last:.2f}%</b> | {move(up, f'{abs(last - prev) * 100:.0f} נ\"ב')}"
-    value = {"fx": f"{last:.3f} ₪", "usd": f"{last:.2f} דולר"}.get(kind, f"{last:,.2f}" if last < 100 else f"{last:,.0f}")
-    return f"{icon} {name}: <b>{value}</b> | {move(up, f'{abs((last - prev) / prev * 100):.2f}%')}"
+        value, change = f"{last:.2f}%", f"{abs(last - prev) * 100:.0f}bp"
+    else:
+        value = {"fx": f"₪{last:.3f}", "usd": f"${last:.2f}"}.get(kind, f"{last:,.2f}" if last < 100 else f"{last:,.0f}")
+        change = f"{abs((last - prev) / prev * 100):.2f}%"
+    return f"{'🟢' if up else '🔴'} {esc(name):<{7 + len(esc(name)) - len(name)}}{value:>9}  {'▲' if up else '▼'}{change}"
 
 def get_markets() -> tuple:
     rows, close_date = [], None
@@ -295,15 +297,17 @@ RULES = """
 כללי ברזל:
 1. השתמש אך ורק בכתבות שקיבלת. אסור להמציא עובדות, מספרים, שמות או סיבות.
 2. source_title — העתק מילה במילה את ה-title של הכתבה שעליה הפריט מבוסס (כך מאמתים שהקישור נכון).
-3. title — כותרת עברית חדה וקצרה. bottom_line — 2 משפטים עם עובדות קונקרטיות מהכתבה (מי, מה, כמה, מתי)
-   ואז המשמעות האמיתית. אסור משפטי סרק כמו "זה חשוב כי זה עשוי להשפיע על...". אם הכתבה לא מספקת משמעות — רק עובדות.
+3. title — כותרת בסגנון עיתון איכותי: פעלית, חדה, עם העובדה המרכזית (מספר, שם), עד 10 מילים. בלי קליקבייט ובלי שאלות.
+   bottom_line — 2 משפטים קצרים, עד 40 מילים: הראשון — מה קרה בדיוק (מי, מה, כמה, מתי); השני — למה זה חשוב או מה הלאה.
+   עברית חיה וזורמת, כמו עיתונאי טוב שמספר לחבר — מדויק, בלי ז'רגון ובלי מילים מיותרות.
    לפתוח ישר בעובדה — בלי "הכתבה מציינת/מדווחת ש...", בלי התווית "המשמעות האמיתית:", ובלי לחזור על הכותרת.
+   אסור משפטי סרק כמו "זה חשוב כי זה עשוי להשפיע על...". אם הכתבה לא מספקת משמעות — רק עובדות.
 4. כמה כתבות על אותו סיפור → פריט אחד, מהכתבה המפורטת ביותר.
 5. הכל בעברית עסקית וזורמת. שם באנגלית מותר בתוך משפט, לא בתחילתו.
 """
 
 TOPIC_FORMAT = """
-בחר את 5 עד 8 הידיעות החשובות ביותר בנושא, לפי סדר חשיבות. אם יש פחות מ-5 ידיעות שבאמת שייכות לנושא — רק אותן;
+בחר בדיוק את 5 הידיעות החשובות והרלוונטיות ביותר בנושא, לפי סדר חשיבות. אם יש פחות מ-5 ידיעות שבאמת שייכות לנושא — רק אותן;
 לעולם לא למלא בידיעות מנושא אחר או ברכילות.
 
 החזר JSON בלבד:
@@ -315,11 +319,14 @@ MARKET_FORMAT = """
 
 החזר JSON בלבד:
 {
-  "market_why": [{"text": "...", "ids": ["..."]}],   // אתמול: 2-3 גורמים שהזיזו את השוק, משפט קצר אחד לכל גורם (עד 20 מילים)
-  "watch": [{"text": "...", "ids": ["..."]}],        // קדימה: 2-3 אירועים צפויים או סיכונים שעלולים לטלטל את השוק בימים הקרובים —
-      // החלטות ריבית, נתוני אינפלציה ותעסוקה, דוחות צפויים, גאופוליטיקה, נפט. משפט קצר אחד לכל אחד. רק ממה שמופיע בכתבות
+  "headline": "...",   // היום בשוק במשפט אחד חד (עד 15 מילים), כמו כותרת ראשית של מוסף כלכלי
+  "market_why": [{"label": "...", "text": "...", "ids": ["..."]}],
+      // אתמול: 2 הגורמים שהכי הזיזו את השוק. label — 1-3 מילים (למשל "הפד", "נפט", "דוחות טק"); text — משפט אחד, עד 20 מילים
+  "watch": [{"label": "...", "text": "...", "ids": ["..."]}],
+      // קדימה: 2 האירועים או הסיכונים שעלולים לטלטל את השוק בימים הקרובים — ריבית, אינפלציה ותעסוקה, דוחות צפויים,
+      // גאופוליטיקה, נפט. אותו פורמט. רק ממה שמופיע בכתבות
   "market_news": [{"id": "...", "source_title": "...", "emoji": "...", "title": "...", "bottom_line": "..."}],
-      // עד 3 ידיעות שוק נוספות (לא על המניות שלי)
+      // ידיעת השוק הבולטת שלא הוזכרה למעלה (אחת, לא על המניות שלי)
   "companies": [{"ticker": "...", "id": "... או null", "source_title": "... או null", "emoji": "...", "title": "...", "bottom_line": "..."}]
       // חובה פריט לכל מניה עם dramatic=true (אם אין כתבה שמסבירה: id=null ו-bottom_line "אין סיבה מדווחת בכתבות מהיממה האחרונה");
       // ועוד כל ידיעה משמעותית על המניות שלי
@@ -384,33 +391,37 @@ def article(e: dict, need_id: bool = True) -> str:
     item = resolve(e)
     if not e.get("title") or not e.get("bottom_line") or (not item and (need_id or e.get("id"))):
         return ""  # פריט שלא מתאים לכתבה אמיתית — לא מציגים
-    out = f"🔻 <b>{esc(e.get('emoji', ''))} {esc(e['title'])}</b>\n💡 <i>השורה התחתונה:</i> {esc(e['bottom_line'])}"
+    out = f"🔹 <b>{esc(e.get('emoji', ''))} {esc(e['title'])}</b>\n💡 <i>השורה התחתונה:</i> {esc(e['bottom_line'])}"
     if item:
         out += f"\n🔗 <a href=\"{esc(item['link'])}\">לקריאת הכתבה המלאה</a> · {esc(item['source'])}"
     return out
 
 def render(today: datetime, market_rows: list, close_date, holdings: dict, ai: dict, channel: bool = False) -> tuple:
     """(הודעות לערוץ, הודעות פרטיות). בערוץ — בריף כללי בלבד; המניות שלך ודוח התקלות — רק בפרטי."""
-    used = set()  # כתבות שכבר הוזכרו — לא חוזרות כידיעה נפרדת
+    used = []  # כתבות שהוזכרו — לא חוזרות כידיעה נפרדת, ומופיעות פעם אחת בשורת המקורות
 
     def notes(entries) -> list:
         out = []
-        for w in (entries or [])[:3]:
-            ids = [i for i in w.get("ids") or [] if i in ITEMS]
-            used.update(ids)
-            src = " · ".join(f'<a href="{esc(ITEMS[i]["link"])}">{esc(ITEMS[i]["source"])}</a>' for i in ids[:2])
+        for w in (entries or [])[:2]:
+            used.extend(i for i in w.get("ids") or [] if i in ITEMS and i not in used)
             if w.get("text"):
-                out.append(f"• {esc(w['text'])}" + (f" — {src}" if src else ""))
+                out.append(f"• <b>{esc(w['label'])}</b> — {esc(w['text'])}" if w.get("label") else f"• {esc(w['text'])}")
         return out
     why, watch = notes(ai.get("market_why")), notes(ai.get("watch"))
-    news = [e for e in ai.get("market_news") or [] if (resolve(e) or {}).get("link") not in {ITEMS[i]["link"] for i in used}][:3]
+    seen = {ITEMS[i]["link"] for i in used}
+    news = [e for e in ai.get("market_news") or [] if (resolve(e) or {}).get("link") not in seen][:max(0, 5 - len(why) - len(watch))]
+    sources = {}
+    for i in used:
+        sources.setdefault(ITEMS[i]["source"], ITEMS[i]["link"])
 
     market = [
-        "📊 <b>מצב השוק</b>" + (f" <i>(סגירה {close_date:%d/%m})</i>" if close_date else "") + "\n" + "\n".join(market_rows)
+        f"🧭 <b>{esc(ai['headline'])}</b>" if ai.get("headline") else "",
+        "📊 <b>סגירה" + (f" {close_date:%d/%m}" if close_date else "") + "</b>\n<pre>" + "\n".join(market_rows) + "</pre>"
         if market_rows else "",
-        "💡 <b>מה זז באמת:</b>\n" + "\n".join(why) if why else "",
-        "⚠️ <b>על מה לשים לב:</b>\n" + "\n".join(watch) if watch else "",
+        "🔎 <b>מה הזיז את השוק</b>\n" + "\n".join(why) if why else "",
+        "⚠️ <b>על מה לשים לב</b>\n" + "\n".join(watch) if watch else "",
         *[article(e) for e in news],
+        "📚 <i>מקורות:</i> " + " · ".join(f'<a href="{esc(l)}">{esc(n)}</a>' for n, l in sources.items()) if sources else "",
     ]
     mine = [
         "\n".join(fmt_holding(t, q) for t, q in sorted(holdings.items(), key=lambda kv: abs(kv[1]["pct"]), reverse=True)),
@@ -418,7 +429,7 @@ def render(today: datetime, market_rows: list, close_date, holdings: dict, ai: d
     ]
 
     date = f"<i>{today:%d/%m/%Y}</i>"
-    public = [(f"{icon} <b>{name}</b> · {date}", [article(e) for e in ai.get(key) or []]) for key, (icon, name, _) in TOPICS.items()]
+    public = [(f"{icon} <b>{name}</b> · {date}", [article(e) for e in (ai.get(key) or [])[:5]]) for key, (icon, name, _) in TOPICS.items()]
     public.append((f"📈 <b>שוק ההון</b> · {date}", market))
     private = [
         (f"💼 <b>המניות שלך</b> · {date}", mine if holdings else []),
@@ -431,7 +442,11 @@ def render(today: datetime, market_rows: list, close_date, holdings: dict, ai: d
     return public_msgs, private_msgs
 
 def rtl(text: str) -> str:
-    return "\n".join(RLM + line if line else line for line in text.split("\n"))
+    out, pre = [], False
+    for line in text.split("\n"):
+        out.append(line if not line or pre else RLM + line)
+        pre = (pre or "<pre>" in line) and "</pre>" not in line
+    return "\n".join(out)
 
 def chunks(blocks: list, limit: int = 3900) -> list:
     """הודעה אחת לנושא; רק אם היא ארוכה מהמותר בטלגרם — מפוצלת בין כתבות."""
