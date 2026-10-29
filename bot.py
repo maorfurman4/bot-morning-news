@@ -315,6 +315,10 @@ MARKET_FORMAT = """
 החזר JSON בלבד:
 {
   "market_why": [{"text": "...", "ids": ["..."]}],   // 2-3 משפטים: מה זז באמת בשווקים ולמה, מבוסס על המספרים והכתבות
+  "watch": [{"text": "...", "ids": ["..."]}],        // 2-4 דברים לשים לב אליהם: מה עלול לטלטל את השוק בימים הקרובים —
+      // החלטות ריבית, נתוני אינפלציה ותעסוקה, דוחות של חברות גדולות, גאופוליטיקה, נפט. רק ממה שמופיע בכתבות
+  "market_news": [{"id": "...", "source_title": "...", "emoji": "...", "title": "...", "bottom_line": "..."}],
+      // 3-5 הידיעות החשובות על השוק הכללי (לא על המניות שלי) — מה קרה ולמה זה חשוב למשקיע
   "companies": [{"ticker": "...", "id": "... או null", "source_title": "... או null", "emoji": "...", "title": "...", "bottom_line": "..."}]
       // חובה פריט לכל מניה עם dramatic=true (אם אין כתבה שמסבירה: id=null ו-bottom_line "אין סיבה מדווחת בכתבות מהיממה האחרונה");
       // ועוד כל ידיעה משמעותית על המניות שלי
@@ -384,16 +388,21 @@ def article(e: dict, need_id: bool = True) -> str:
 
 def render(today: datetime, market_rows: list, close_date, holdings: dict, ai: dict, channel: bool = False) -> tuple:
     """(הודעות לערוץ, הודעות פרטיות). בערוץ — בריף כללי בלבד; המניות שלך ודוח התקלות — רק בפרטי."""
-    why = []
-    for w in ai.get("market_why") or []:
-        src = " · ".join(f'<a href="{esc(ITEMS[i]["link"])}">{esc(ITEMS[i]["source"])}</a>' for i in w.get("ids") or [] if i in ITEMS)
-        if w.get("text"):
-            why.append(f"• {esc(w['text'])}" + (f" ({src})" if src else ""))
+    def notes(entries) -> list:
+        out = []
+        for w in entries or []:
+            src = " · ".join(f'<a href="{esc(ITEMS[i]["link"])}">{esc(ITEMS[i]["source"])}</a>' for i in w.get("ids") or [] if i in ITEMS)
+            if w.get("text"):
+                out.append(f"• {esc(w['text'])}" + (f" ({src})" if src else ""))
+        return out
+    why, watch = notes(ai.get("market_why")), notes(ai.get("watch"))
 
     market = [
         "📊 <b>מצב השוק</b>" + (f" <i>(סגירה {close_date:%d/%m})</i>" if close_date else "") + "\n" + "\n".join(market_rows)
         if market_rows else "",
         "💡 <b>מה זז באמת:</b>\n" + "\n".join(why) if why else "",
+        "⚠️ <b>על מה לשים לב:</b>\n" + "\n".join(watch) if watch else "",
+        *[article(e) for e in ai.get("market_news") or []],
     ]
     mine = [
         "\n".join(fmt_holding(t, q) for t, q in sorted(holdings.items(), key=lambda kv: abs(kv[1]["pct"]), reverse=True)),
