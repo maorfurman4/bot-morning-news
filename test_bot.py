@@ -78,7 +78,7 @@ _, priv_only = bot.render(now, [], None, hold, {}, channel=False)
 assert "מובילאיי" in "\n".join(sum(priv_only, []))
 # 📈 שוק ההון בערוץ: גם "על מה לשים לב" וידיעות שוק — ידיעות על המניות שלך נשארות בפרטי
 ai = {"watch": [{"text": "החלטת ריבית בארה\"ב ביום רביעי", "ids": ["w1"]}],
-      "market_news": [dict(good, title="וול סטריט ירדה")],
+      "market_news": [dict(good, id="w2", source_title="Iran talks", title="וול סטריט ירדה")],
       "companies": [dict(good, title="מובילאיי צנחה")]}
 pub, priv = bot.render(now, ['🔴 נאסד"ק: <b>26,001</b>'], None, hold, ai, channel=True)
 public_text, private_text = "\n".join(sum(pub, [])), "\n".join(sum(priv, []))
