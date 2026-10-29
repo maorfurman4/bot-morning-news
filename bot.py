@@ -514,7 +514,7 @@ def build() -> list:
         else:
             ai[key] = result.get("items", [])
     public, private = render(now.astimezone(IL_TZ), market_rows, close_date, holdings, ai, channel=bool(CHANNEL_ID))
-    print("✅ shown: " + ", ".join(f"{m[1 if i == 0 else 0][:12]}: {sum(b.startswith('🔻') for b in m)}" for i, m in enumerate(public)))
+    print("✅ shown: " + ", ".join(f"{m[1 if i == 0 else 0][:12]}: {sum(b.startswith('🔹') for b in m)}" for i, m in enumerate(public)))
     return [part for msg in public for part in chunks(msg)], [part for msg in private for part in chunks(msg)]
 
 if __name__ == "__main__":
