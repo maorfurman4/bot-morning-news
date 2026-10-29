@@ -13,6 +13,7 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
+from itertools import zip_longest
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from urllib.parse import quote_plus
@@ -31,6 +32,7 @@ CHANNEL_ID = os.environ.get("NEWS_CHANNEL_ID", "").strip()  # ערוץ הברי�
 
 IL_TZ = ZoneInfo("Asia/Jerusalem")
 MAX_AGE = timedelta(hours=26)
+PER_TOPIC = 50   # תקרה לנושא — עוד מקורות = יותר גיוון, לא יותר טוקנים
 PER_FEED = 6     # כמה כתבות לקחת מכל מקור (לפי הסדר של המקור עצמו) — מספיק ל-5–8 ידיעות לנושא
 DRAMATIC = 3.0   # % — מניה שזזה יותר מזה מקבלת הסבר
 MODELS = ["gpt-5-mini", "gpt-4o-mini"]  # הראשון שעובד עם המפתח; mini — בערך חמישית מהמחיר
@@ -78,6 +80,11 @@ FEEDS = {
         (None, gn("site:reuters.com Israel")),
         (None, gn("site:calcalist.co.il", "he")),
         (None, gn("site:themarker.com", "he")),
+        ("מעריב", "https://www.maariv.co.il/Rss/RssChadashot"),
+        ("וואלה", "https://rss.walla.co.il/feed/1"),
+        (None, gn("site:kan.org.il", "he")),
+        (None, gn("site:mako.co.il", "he")),
+        (None, gn("site:jpost.com")),
     ],
     "ai": [
         ("TechCrunch", "https://techcrunch.com/category/artificial-intelligence/feed/"),
@@ -86,6 +93,9 @@ FEEDS = {
         ("Wired", "https://www.wired.com/feed/tag/ai/latest/rss"),
         ("The Verge", "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml"),
         (None, gn("artificial intelligence")),
+        ("The Decoder", "https://the-decoder.com/feed/"),
+        (None, gn("site:reuters.com artificial intelligence")),
+        (None, gn("OpenAI OR Anthropic OR Google Gemini")),
     ],
     "tech": [
         ("BBC", "https://feeds.bbci.co.uk/news/technology/rss.xml"),
@@ -96,6 +106,10 @@ FEEDS = {
         ("Engadget", "https://www.engadget.com/rss.xml"),
         ("The Verge", "https://www.theverge.com/rss/tech/index.xml"),
         (None, gn("robotics")),
+        ("The Register", "https://www.theregister.com/headlines.atom"),
+        ("Electrek", "https://electrek.co/feed/"),
+        ("Geektime", "https://www.geektime.co.il/feed/"),
+        (None, gn("site:reuters.com technology")),
     ],
     "world": [
         ("BBC", "https://feeds.bbci.co.uk/news/world/rss.xml"),
@@ -104,6 +118,9 @@ FEEDS = {
         ("Al Jazeera", "https://www.aljazeera.com/xml/rss/all.xml"),
         ("NPR", "https://feeds.npr.org/1004/rss.xml"),
         ("CNBC", "https://www.cnbc.com/id/100003114/device/rss/rss.html"),
+        ("New York Times", "https://rss.nytimes.com/services/xml/rss/nyt/World.xml"),
+        ("France 24", "https://www.france24.com/en/rss"),
+        (None, gn("site:apnews.com world")),
     ],
     "market": [
         ("CNBC", "https://www.cnbc.com/id/20910258/device/rss/rss.html"),
@@ -111,6 +128,10 @@ FEEDS = {
         (None, gn("stock market today")),
         (None, gn("Wall Street stocks close")),
         (None, gn("Tel Aviv Stock Exchange")),
+        ("Investing.com", "https://www.investing.com/rss/news_25.rss"),
+        ("גלובס", "https://www.globes.co.il/webservice/rss/rssfeeder.asmx/FeederNode?iID=1725"),
+        (None, gn("site:bloomberg.com markets")),
+        (None, gn("site:reuters.com markets")),
     ],
 }
 
@@ -119,8 +140,8 @@ TRUSTED = (
     "reuters", "bloomberg", "cnbc", "wall street journal", "wsj", "marketwatch", "yahoo",
     "financial times", "barron", "ap news", "associated press", "investing.com", "axios",
     "bbc", "guardian", "npr", "al jazeera", "politico", "economist", "nikkei", "semafor",
-    "techcrunch", "the verge", "wired", "ars technica", "engadget", "mit technology review",
-    "ieee", "fortune", "business insider", "the information",
+    "techcrunch", "the verge", "wired", "ars technica", "engadget", "mit technology review", "the decoder",
+    "ieee", "fortune", "business insider", "the information", "new york times", "france 24", "the register",
     "times of israel", "haaretz", "jerusalem post", "i24", "ynet", "mako", "n12",
     "globes", "calcalist", "themarker", "הארץ", "גלובס", "כלכליסט", "דה מרקר",
     "מעריב", "כאן 11", "וואלה", "ישראל היום", "חדשות 13",
@@ -222,7 +243,9 @@ def read_feed(name: str | None, url: str, now: datetime, limit: int = PER_FEED) 
 def get_feed(category: str, now: datetime) -> list:
     with ThreadPoolExecutor(8) as pool:
         per_feed = list(pool.map(lambda f: read_feed(*f, now), FEEDS[category]))
-    return fresh([i for items in per_feed for i in items], now)
+    # לסירוגין בין המקורות: הכתבה הראשונה מכל מקור, אחר כך השנייה... כך התקרה לא מוחקת מקורות שלמים
+    mixed = [i for row in zip_longest(*per_feed) for i in row if i]
+    return fresh(mixed, now)[:PER_TOPIC]
 
 # =============================================================================
 # ─── נתוני שוק (Yahoo Finance) ───────────────────────────────────────────────

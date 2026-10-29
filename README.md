@@ -24,7 +24,13 @@
 
 ## מאיפה המידע
 - **מספרים**: Yahoo Finance (yfinance) — מחושבים בקוד, לא ע"י ה-AI
-- **חדשות**: כ-30 מקורות ב-`FEEDS` — ישראל: הכותרות הראשיות של Google News ישראל (ynet, mako, מעריב, כאן, גלובס...), ynet, גלובס, הארץ, Times of Israel, Reuters, כלכליסט, TheMarker; AI: TechCrunch, MIT Technology Review, Ars Technica, Wired, The Verge; טכנולוגיה: BBC, TechCrunch, IEEE Spectrum, Ars Technica, Wired, Engadget, The Verge; עולם: BBC, Reuters, Guardian, Al Jazeera, NPR, CNBC; שוק: CNBC, MarketWatch + Google News מסונן למקורות אמינים (`TRUSTED`). רק 26 השעות האחרונות
+- **חדשות**: כ-45 מקורות ב-`FEEDS` — ישראל: הכותרות הראשיות של Google News ישראל, ynet, גלובס, הארץ, מעריב, וואלה,
+  כאן 11, mako, Times of Israel, Jerusalem Post, Reuters, כלכליסט, TheMarker; AI: TechCrunch, MIT Technology Review,
+  Ars Technica, Wired, The Verge, The Decoder, Reuters; טכנולוגיה: BBC, TechCrunch, IEEE Spectrum, Ars Technica, Wired,
+  Engadget, The Verge, The Register, Electrek, Geektime, Reuters; עולם: BBC, Reuters, AP, Guardian, New York Times,
+  France 24, Al Jazeera, NPR, CNBC; שוק: CNBC, MarketWatch, Investing.com, גלובס שוק ההון, Bloomberg, Reuters +
+  Google News מסונן למקורות אמינים (`TRUSTED`). רק 26 השעות האחרונות, עד 6 כתבות ממקור ועד 50 לנושא (`PER_TOPIC`),
+  לסירוגין בין המקורות
 - **סיכום**: ה-AI בוחר ומתרגם רק מתוך הכתבות שקיבל. הקישור והמקור ליד כל פריט מגיעים מהנתונים, לא מה-AI
 
 ## מתי
