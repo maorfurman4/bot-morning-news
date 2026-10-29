@@ -62,8 +62,20 @@ assert len(parts) == 2 and all(len(p) <= 3900 for p in parts)
 assert all(line.startswith(bot.RLM) for line in parts[1].split("\n") if line)
 
 # הודעה נפרדת לכל נושא; נושא בלי כתבות לא נשלח; הפתיח רק בהודעה הראשונה
-msgs = bot.render(now, [], None, {}, {"israel": [good], "ai": [dict(good, source_title="x")], "world": [good]})
+msgs, _ = bot.render(now, [], None, {}, {"israel": [good], "ai": [dict(good, source_title="x")], "world": [good]})
 assert len(msgs) == 2 and msgs[0][1].startswith("🇮🇱") and msgs[1][0].startswith("🌍")
 assert msgs[0][0].startswith("🌅")
+
+# 📢 ערוץ: בריף כללי בלבד. המניות שלך ודוח התקלות — רק אליך בפרטי
+bot.FAILURES.append("• <b>מקור X</b>: 403")
+hold = {"MBLY": {"last": 6.55, "pct": -5.7}}
+pub, priv = bot.render(now, ['🔴 נאסד"ק: <b>26,001</b>'], None, hold, {"israel": [good]}, channel=True)
+public_text, private_text = "\n".join(sum(pub, [])), "\n".join(sum(priv, []))
+assert "מאור" not in public_text and "מובילאיי" not in public_text and "מה לא עבד" not in public_text
+assert "נאסד\"ק" in public_text and pub[0][0] == "🌅 <b>בוקר טוב — בריף בוקר</b> ☕"
+assert "מובילאיי" in private_text and "מה לא עבד" in private_text
+_, priv_only = bot.render(now, [], None, hold, {}, channel=False)
+assert "מובילאיי" in "\n".join(sum(priv_only, []))
+bot.FAILURES.clear()
 
 print("ok")

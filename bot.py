@@ -26,7 +26,8 @@ import yfinance as yf
 # =============================================================================
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN_NEWS", "").strip()
-CHAT_ID = os.environ.get("CHAT_ID_NEWS", "").strip()
+CHAT_ID = os.environ.get("CHAT_ID_NEWS", "").strip()        # אתה — המניות שלך ודוח תקלות
+CHANNEL_ID = os.environ.get("NEWS_CHANNEL_ID", "").strip()  # ערוץ הבריף (@שם או -100...); ריק — הכל אליך
 
 IL_TZ = ZoneInfo("Asia/Jerusalem")
 MAX_AGE = timedelta(hours=26)
@@ -381,34 +382,36 @@ def article(e: dict, need_id: bool = True) -> str:
         out += f"\n🔗 <a href=\"{esc(item['link'])}\">לקריאת הכתבה המלאה</a> · {esc(item['source'])}"
     return out
 
-def render(today: datetime, market_rows: list, close_date, holdings: dict, ai: dict) -> list:
-    """רשימת הודעות — הודעה לכל נושא; כל הודעה היא כותרת + בלוקים."""
+def render(today: datetime, market_rows: list, close_date, holdings: dict, ai: dict, channel: bool = False) -> tuple:
+    """(הודעות לערוץ, הודעות פרטיות). בערוץ — בריף כללי בלבד; המניות שלך ודוח התקלות — רק בפרטי."""
     why = []
     for w in ai.get("market_why") or []:
         src = " · ".join(f'<a href="{esc(ITEMS[i]["link"])}">{esc(ITEMS[i]["source"])}</a>' for i in w.get("ids") or [] if i in ITEMS)
         if w.get("text"):
             why.append(f"• {esc(w['text'])}" + (f" ({src})" if src else ""))
 
-    stocks = [
+    market = [
         "📊 <b>מצב השוק</b>" + (f" <i>(סגירה {close_date:%d/%m})</i>" if close_date else "") + "\n" + "\n".join(market_rows)
         if market_rows else "",
         "💡 <b>מה זז באמת:</b>\n" + "\n".join(why) if why else "",
-        "💼 <b>המניות שלי</b>\n" + "\n".join(
-            fmt_holding(t, q) for t, q in sorted(holdings.items(), key=lambda kv: abs(kv[1]["pct"]), reverse=True)
-        ) if holdings else "",
+    ]
+    mine = [
+        "\n".join(fmt_holding(t, q) for t, q in sorted(holdings.items(), key=lambda kv: abs(kv[1]["pct"]), reverse=True)),
         *[article(c, need_id=False) for c in ai.get("companies") or []],
     ]
 
     date = f"<i>{today:%d/%m/%Y}</i>"
-    topics = [(f"{icon} <b>{name}</b> · {date}", [article(e) for e in ai.get(key) or []]) for key, (icon, name, _) in TOPICS.items()]
-    topics += [
-        (f"📈 <b>שוק ההון ותיק המניות</b> · {date}", stocks),
+    public = [(f"{icon} <b>{name}</b> · {date}", [article(e) for e in ai.get(key) or []]) for key, (icon, name, _) in TOPICS.items()]
+    public.append((f"📈 <b>שוק ההון</b> · {date}", market))
+    private = [
+        (f"💼 <b>המניות שלך</b> · {date}", mine if holdings else []),
         ("⚠️ <b>בוט החדשות — מה לא עבד היום:</b>", ["\n".join(FAILURES)] if FAILURES else []),
     ]
-    messages = [[title, SEP, *[b for b in blocks if b]] for title, blocks in topics if any(blocks)]
-    if messages:
-        messages[0].insert(0, "🌅 <b>בוקר טוב מאור — בריף בוקר</b> ☕")
-    return messages
+    to_messages = lambda topics: [[title, SEP, *[b for b in blocks if b]] for title, blocks in topics if any(blocks)]
+    public_msgs, private_msgs = to_messages(public), to_messages(private)
+    if public_msgs:
+        public_msgs[0].insert(0, f"🌅 <b>בוקר טוב{'' if channel else ' מאור'} — בריף בוקר</b> ☕")
+    return public_msgs, private_msgs
 
 def rtl(text: str) -> str:
     return "\n".join(RLM + line if line else line for line in text.split("\n"))
@@ -429,10 +432,10 @@ def chunks(blocks: list, limit: int = 3900) -> list:
 # ─── שליחה ───────────────────────────────────────────────────────────────────
 # =============================================================================
 
-def send_to_telegram(text: str) -> None:
+def send_to_telegram(text: str, chat_id: str = "") -> None:
     resp = requests.post(
         f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-        json={"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True},
+        json={"chat_id": chat_id or CHAT_ID, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True},
         timeout=30,
     )
     if resp.status_code != 200:
@@ -478,20 +481,20 @@ def build() -> list:
             ai.update(result)
         else:
             ai[key] = result.get("items", [])
-    messages = render(now.astimezone(IL_TZ), market_rows, close_date, holdings, ai)
-    print("✅ shown: " + ", ".join(f"{m[1 if i == 0 else 0][:12]}: {sum(b.startswith('🔻') for b in m)}" for i, m in enumerate(messages)))
-    return [part for msg in messages for part in chunks(msg)]
+    public, private = render(now.astimezone(IL_TZ), market_rows, close_date, holdings, ai, channel=bool(CHANNEL_ID))
+    print("✅ shown: " + ", ".join(f"{m[1 if i == 0 else 0][:12]}: {sum(b.startswith('🔻') for b in m)}" for i, m in enumerate(public)))
+    return [part for msg in public for part in chunks(msg)], [part for msg in private for part in chunks(msg)]
 
 if __name__ == "__main__":
     try:
-        messages = build()
+        public, private = build()
     except Exception as ex:
         if "--dry-run" not in sys.argv:
             send_to_telegram(f"⚠️ בוט החדשות נכשל ולא שלח בריף היום:\n{esc(type(ex).__name__)}: {esc(str(ex)[:300])}")
         raise
-    for msg in messages:
+    for msg, chat in [(m, CHANNEL_ID) for m in public] + [(m, CHAT_ID) for m in private]:
         if "--dry-run" in sys.argv:
-            print(msg, "\n" + "=" * 40)
+            print(f"[{'channel' if chat == CHANNEL_ID and CHANNEL_ID else 'private'}]", msg, "\n" + "=" * 40)
         else:
-            send_to_telegram(msg)
+            send_to_telegram(msg, chat)
     print("🏁 Run complete.")
