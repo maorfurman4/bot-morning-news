@@ -84,6 +84,10 @@ pub, priv = bot.render(now, ['🔴 נאסד"ק: <b>26,001</b>'], None, hold, ai,
 public_text, private_text = "\n".join(sum(pub, [])), "\n".join(sum(priv, []))
 assert "על מה לשים לב" in public_text and "החלטת ריבית" in public_text and "וול סטריט ירדה" in public_text
 assert "מובילאיי צנחה" not in public_text and "מובילאיי צנחה" in private_text
+# סיפור שכבר הוזכר ב"מה זז"/"על מה לשים לב" לא חוזר כידיעה נפרדת; מקור בלי סוגריים
+dup_ai = {"watch": [{"text": "ריבית", "ids": ["w1"]}], "market_news": [dict(good, title="כפול")]}
+pub, _ = bot.render(now, [], None, {}, dup_ai, channel=True)
+assert "כפול" not in "\n".join(sum(pub, [])) and "ריבית — <a" in "\n".join(sum(pub, []))
 bot.FAILURES.clear()
 
 print("ok")

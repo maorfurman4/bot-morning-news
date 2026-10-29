@@ -297,6 +297,7 @@ RULES = """
 2. source_title — העתק מילה במילה את ה-title של הכתבה שעליה הפריט מבוסס (כך מאמתים שהקישור נכון).
 3. title — כותרת עברית חדה וקצרה. bottom_line — 2 משפטים עם עובדות קונקרטיות מהכתבה (מי, מה, כמה, מתי)
    ואז המשמעות האמיתית. אסור משפטי סרק כמו "זה חשוב כי זה עשוי להשפיע על...". אם הכתבה לא מספקת משמעות — רק עובדות.
+   לפתוח ישר בעובדה — בלי "הכתבה מציינת/מדווחת ש...", בלי התווית "המשמעות האמיתית:", ובלי לחזור על הכותרת.
 4. כמה כתבות על אותו סיפור → פריט אחד, מהכתבה המפורטת ביותר.
 5. הכל בעברית עסקית וזורמת. שם באנגלית מותר בתוך משפט, לא בתחילתו.
 """
@@ -314,15 +315,17 @@ MARKET_FORMAT = """
 
 החזר JSON בלבד:
 {
-  "market_why": [{"text": "...", "ids": ["..."]}],   // 2-3 משפטים: מה זז באמת בשווקים ולמה, מבוסס על המספרים והכתבות
-  "watch": [{"text": "...", "ids": ["..."]}],        // 2-4 דברים לשים לב אליהם: מה עלול לטלטל את השוק בימים הקרובים —
-      // החלטות ריבית, נתוני אינפלציה ותעסוקה, דוחות של חברות גדולות, גאופוליטיקה, נפט. רק ממה שמופיע בכתבות
+  "market_why": [{"text": "...", "ids": ["..."]}],   // אתמול: 2-3 גורמים שהזיזו את השוק, משפט קצר אחד לכל גורם (עד 20 מילים)
+  "watch": [{"text": "...", "ids": ["..."]}],        // קדימה: 2-3 אירועים צפויים או סיכונים שעלולים לטלטל את השוק בימים הקרובים —
+      // החלטות ריבית, נתוני אינפלציה ותעסוקה, דוחות צפויים, גאופוליטיקה, נפט. משפט קצר אחד לכל אחד. רק ממה שמופיע בכתבות
   "market_news": [{"id": "...", "source_title": "...", "emoji": "...", "title": "...", "bottom_line": "..."}],
-      // 3-5 הידיעות החשובות על השוק הכללי (לא על המניות שלי) — מה קרה ולמה זה חשוב למשקיע
+      // עד 3 ידיעות שוק נוספות (לא על המניות שלי)
   "companies": [{"ticker": "...", "id": "... או null", "source_title": "... או null", "emoji": "...", "title": "...", "bottom_line": "..."}]
       // חובה פריט לכל מניה עם dramatic=true (אם אין כתבה שמסבירה: id=null ו-bottom_line "אין סיבה מדווחת בכתבות מהיממה האחרונה");
       // ועוד כל ידיעה משמעותית על המניות שלי
 }
+אסור לחזור על אותו סיפור פעמיים: כל סיפור מופיע רק בחלק אחד — market_why (מה כבר קרה), watch (מה צפוי)
+או market_news (סיפור שלא הוזכר בשניהם). אם אין סיפור חדש — market_news ריק.
 """
 
 ITEMS = {}  # id → כתבה, כדי שהקישורים והמקורות יגיעו מהנתונים ולא מה-AI
@@ -388,21 +391,26 @@ def article(e: dict, need_id: bool = True) -> str:
 
 def render(today: datetime, market_rows: list, close_date, holdings: dict, ai: dict, channel: bool = False) -> tuple:
     """(הודעות לערוץ, הודעות פרטיות). בערוץ — בריף כללי בלבד; המניות שלך ודוח התקלות — רק בפרטי."""
+    used = set()  # כתבות שכבר הוזכרו — לא חוזרות כידיעה נפרדת
+
     def notes(entries) -> list:
         out = []
-        for w in entries or []:
-            src = " · ".join(f'<a href="{esc(ITEMS[i]["link"])}">{esc(ITEMS[i]["source"])}</a>' for i in w.get("ids") or [] if i in ITEMS)
+        for w in (entries or [])[:3]:
+            ids = [i for i in w.get("ids") or [] if i in ITEMS]
+            used.update(ids)
+            src = " · ".join(f'<a href="{esc(ITEMS[i]["link"])}">{esc(ITEMS[i]["source"])}</a>' for i in ids[:2])
             if w.get("text"):
-                out.append(f"• {esc(w['text'])}" + (f" ({src})" if src else ""))
+                out.append(f"• {esc(w['text'])}" + (f" — {src}" if src else ""))
         return out
     why, watch = notes(ai.get("market_why")), notes(ai.get("watch"))
+    news = [e for e in ai.get("market_news") or [] if (resolve(e) or {}).get("link") not in {ITEMS[i]["link"] for i in used}][:3]
 
     market = [
         "📊 <b>מצב השוק</b>" + (f" <i>(סגירה {close_date:%d/%m})</i>" if close_date else "") + "\n" + "\n".join(market_rows)
         if market_rows else "",
         "💡 <b>מה זז באמת:</b>\n" + "\n".join(why) if why else "",
         "⚠️ <b>על מה לשים לב:</b>\n" + "\n".join(watch) if watch else "",
-        *[article(e) for e in ai.get("market_news") or []],
+        *[article(e) for e in news],
     ]
     mine = [
         "\n".join(fmt_holding(t, q) for t, q in sorted(holdings.items(), key=lambda kv: abs(kv[1]["pct"]), reverse=True)),
