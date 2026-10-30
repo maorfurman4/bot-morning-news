@@ -119,7 +119,6 @@ FEEDS = {
         ("NPR", "https://feeds.npr.org/1004/rss.xml"),
         ("CNBC", "https://www.cnbc.com/id/100003114/device/rss/rss.html"),
         ("New York Times", "https://rss.nytimes.com/services/xml/rss/nyt/World.xml"),
-        ("France 24", "https://www.france24.com/en/rss"),
         (None, gn("site:apnews.com world")),
     ],
     "market": [
@@ -282,6 +281,47 @@ def get_markets() -> tuple:
         rows.append(fmt_market(name, kind, last, prev))
     return rows, close_date
 
+# רכישות פנים: מנהלים שקנו מניות של החברה שלהם (דיווחי Form 4 ל-SEC, דרך OpenInsider — חינמי;
+# GuruFocus חוסם גישה אוטומטית ודורש API בתשלום). רק קניות, רק בכירים/דירקטורים, מעל 100 אלף דולר
+INSIDERS_URL = ("http://openinsider.com/screener?fd=3&xp=1&vl=100&isceo=1&iscfo=1&ispres=1&iscoo=1&iscob=1"
+                "&isdirector=1&sortcol=12&cnt=40")
+ROLES = [("CEO", 'מנכ"ל'), ("CFO", 'סמנכ"ל כספים'), ("COO", 'סמנכ"ל תפעול'), ("Pres", "נשיא"),
+         ("Chair", 'יו"ר'), ("COB", 'יו"ר'), ("Dir", "דירקטור")]
+US_TZ = ZoneInfo("America/New_York")
+
+def parse_insiders(page: str, now: datetime) -> list:
+    table = page[page.find('class="tinytable"'):]
+    out = []
+    for row in re.findall(r"<tr[^>]*>(.*?)</tr>", table, re.S)[1:]:
+        c = [html.unescape(re.sub(r"<[^>]+>", "", x)).strip() for x in re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)]
+        if len(c) < 13 or not c[7].startswith("P"):
+            continue
+        try:
+            filed = datetime.strptime(c[1], "%Y-%m-%d %H:%M:%S").replace(tzinfo=US_TZ)
+            value = float(re.sub(r"[^\d.]", "", c[12]))
+        except ValueError:
+            continue
+        if now - filed > MAX_AGE or re.search(r"acquisition|fund\b|trust\b", c[4], re.I):
+            continue  # רק מהיממה האחרונה; בלי SPAC וקרנות — שם זו לא "ידיעה פנימית"
+        role = next((he for en, he in ROLES if re.search(rf"\b{en}", c[6])), None)
+        if role:
+            company = re.sub(r"\s*/\w+$", "", c[4]).rstrip(" ,.")  # "Huntington Bancshares Inc /M" → בלי הסיומת
+            out.append({"ticker": c[3].split(">")[-1].strip(), "company": company, "role": role, "value": value,
+                        "price": c[8]})
+    return sorted(out, key=lambda i: -i["value"])[:5]
+
+def get_insiders(now: datetime) -> list:
+    try:
+        return parse_insiders(fetch(INSIDERS_URL).decode("utf-8", "ignore"), now)
+    except Exception as ex:
+        fail("רכישות פנים (OpenInsider)", ex)
+        return []
+
+def fmt_insider(i: dict) -> str:
+    v = f"${i['value'] / 1e6:.1f}M" if i["value"] >= 1e6 else f"${i['value'] / 1e3:.0f}K"
+    return (f'• <a href="http://openinsider.com/{esc(i["ticker"])}"><b>{esc(i["ticker"])}</b></a> ({esc(i["company"][:28].rstrip(" ,."))}) — '
+            f"{i['role']} קנה ב-<b>{v}</b>, במחיר {esc(i['price'])}")
+
 def get_holdings() -> dict:
     out = {}
     for ticker in HOLDINGS:
@@ -420,7 +460,8 @@ def article(e: dict, need_id: bool = True) -> str:
         out += f"\n🔗 <a href=\"{esc(item['link'])}\">לקריאת הכתבה המלאה</a> · {esc(item['source'])}"
     return out
 
-def render(today: datetime, market_rows: list, close_date, holdings: dict, ai: dict, channel: bool = False) -> tuple:
+def render(today: datetime, market_rows: list, close_date, holdings: dict, ai: dict, channel: bool = False,
+           insiders: list = ()) -> tuple:
     """(הודעות לערוץ, הודעות פרטיות). בערוץ — בריף כללי בלבד; המניות שלך ודוח התקלות — רק בפרטי."""
     used = []  # כתבות שהוזכרו — לא חוזרות כידיעה נפרדת, ומופיעות פעם אחת בשורת המקורות
 
@@ -444,6 +485,8 @@ def render(today: datetime, market_rows: list, close_date, holdings: dict, ai: d
         if market_rows else "",
         "🔎 <b>מה הזיז את השוק</b>\n" + "\n".join(why) if why else "",
         "⚠️ <b>על מה לשים לב</b>\n" + "\n".join(watch) if watch else "",
+        "🕵️ <b>רכישות פנים</b> <i>— מנהלים שקנו מניות של החברה שלהם (דיווחי SEC)</i>\n" + "\n".join(map(fmt_insider, insiders))
+        if insiders else "",
         *[article(e) for e in news],
         "📚 <i>מקורות:</i> " + " · ".join(f'<a href="{esc(l)}">{esc(n)}</a>' for n, l in sources.items()) if sources else "",
     ]
@@ -503,6 +546,7 @@ def build() -> list:
     print("📊 Market data...")
     market_rows, close_date = get_markets()
     holdings = get_holdings()
+    insiders = get_insiders(datetime.now(timezone.utc))
 
     print("📥 News...")
     news = {cat: register(cat[0], get_feed(cat, now)) for cat in FEEDS}
@@ -537,7 +581,9 @@ def build() -> list:
             ai.update(result)
         else:
             ai[key] = result.get("items", [])
-    public, private = render(now.astimezone(IL_TZ), market_rows, close_date, holdings, ai, channel=bool(CHANNEL_ID))
+    print("🧠 AI returned: " + ", ".join(f"{k}: {len(v)}" for k, v in ai.items() if isinstance(v, list)) + f", insiders: {len(insiders)}")
+    public, private = render(now.astimezone(IL_TZ), market_rows, close_date, holdings, ai, channel=bool(CHANNEL_ID),
+                             insiders=insiders)
     print("✅ shown: " + ", ".join(f"{m[1 if i == 0 else 0][:12]}: {sum(b.startswith('🔹') for b in m)}" for i, m in enumerate(public)))
     return [part for msg in public for part in chunks(msg)], [part for msg in private for part in chunks(msg)]
 

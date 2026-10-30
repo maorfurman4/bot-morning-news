@@ -95,6 +95,23 @@ msgs, _ = bot.render(now, ["🟢 a", "🔴 b"], None, {}, {"world": [dict(good, 
 assert sum(b.startswith("🔹") for b in msgs[0]) == 5
 table = bot.chunks(next(m for m in bot.render(now, ["🟢 a", "🔴 b"], None, {}, {})[0]))[0]
 assert "\n🔴 b</pre>" in table
+
+# 🕵️ רכישות פנים: רק קניות, רק בכירים, רק מהיממה האחרונה, בלי SPAC; ממוין לפי סכום
+row = lambda filed, tk, co, role, typ, val: (f"<tr><td></td><td>{filed}</td><td>x</td><td><a>{tk}</a></td><td>{co}</td>"
+                                            f"<td>N</td><td>{role}</td><td>{typ}</td><td>$10.00</td><td></td><td></td><td></td><td>{val}</td></tr>")
+page = '<table class="tinytable"><tr><th>h</th></tr>' + "".join([
+    row("2026-10-23 07:00:00", "AAA", "Alpha Inc /DE", "CEO", "P - Purchase", "+$250,000"),
+    row("2026-10-23 06:00:00", "BBB", "Beta Corp", "Dir", "P - Purchase", "+$1,500,000"),
+    row("2026-10-23 06:00:00", "CCC", "Gamma Acquisition Co", "CEO", "P - Purchase", "+$9,000,000"),  # SPAC
+    row("2026-10-23 06:00:00", "DDD", "Delta", "10%", "P - Purchase", "+$9,000,000"),  # לא בכיר
+    row("2026-10-20 06:00:00", "EEE", "Epsilon", "CEO", "P - Purchase", "+$9,000,000"),  # ישן
+    row("2026-10-23 06:00:00", "FFF", "Phi", "CEO", "S - Sale", "-$9,000,000"),  # מכירה
+]) + "</table>"
+ins = bot.parse_insiders(page, now)
+assert [i["ticker"] for i in ins] == ["BBB", "AAA"] and ins[1]["company"] == "Alpha Inc"
+assert bot.fmt_insider(ins[0]).endswith('— דירקטור קנה ב-<b>$1.5M</b>, במחיר $10.00')
+pub, _ = bot.render(now, ["🟢 a"], None, {}, {}, channel=True, insiders=ins)
+assert "🕵️ <b>רכישות פנים</b>" in "\n".join(sum(pub, []))
 bot.FAILURES.clear()
 
 print("ok")

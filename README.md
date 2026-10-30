@@ -13,7 +13,8 @@
 3. 🦾 טכנולוגיה ורובוטיקה
 4. 🌍 אקטואליה עולמית
 5. 📈 שוק ההון — כותרת היום, טבלת סגירה (S&P 500, Nasdaq, Dow, TA-35, VIX, US 10Y, USD/ILS, Brent),
-   "מה הזיז את השוק" (2), "על מה לשים לב" (2 — ריבית, אינפלציה, דוחות, גאופוליטיקה, נפט), ידיעה בולטת ושורת מקורות.
+   "מה הזיז את השוק" (2), "על מה לשים לב" (2 — ריבית, אינפלציה, דוחות, גאופוליטיקה, נפט),
+   🕵️ רכישות פנים (עד 5 קניות של מנכ"לים/סמנכ"לים/דירקטורים מעל 100 אלף דולר מהיממה האחרונה), ידיעה בולטת ושורת מקורות.
    כל סיפור מופיע פעם אחת
 6. 💼 המניות שלך (בפרטי) — מניה שזזה מעל 3% (`DRAMATIC`) מקבלת הסבר מכתבות
 7. ⚠️ מה לא עבד (בפרטי, רק אם משהו נכשל)
@@ -24,11 +25,13 @@
 
 ## מאיפה המידע
 - **מספרים**: Yahoo Finance (yfinance) — מחושבים בקוד, לא ע"י ה-AI
+- **רכישות פנים**: OpenInsider (דיווחי Form 4 ל-SEC, חינמי) — נבנה בקוד, לא ע"י ה-AI. GuruFocus חוסם גישה אוטומטית
+  ודורש API בתשלום
 - **חדשות**: כ-45 מקורות ב-`FEEDS` — ישראל: הכותרות הראשיות של Google News ישראל, ynet, גלובס, הארץ, מעריב, וואלה,
   כאן 11, mako, Times of Israel, Jerusalem Post, Reuters, כלכליסט, TheMarker; AI: TechCrunch, MIT Technology Review,
   Ars Technica, Wired, The Verge, The Decoder, Reuters; טכנולוגיה: BBC, TechCrunch, IEEE Spectrum, Ars Technica, Wired,
   Engadget, The Verge, The Register, Electrek, Geektime, Reuters; עולם: BBC, Reuters, AP, Guardian, New York Times,
-  France 24, Al Jazeera, NPR, CNBC; שוק: CNBC, MarketWatch, Investing.com, גלובס שוק ההון, Bloomberg, Reuters +
+  Al Jazeera, NPR, CNBC; שוק: CNBC, MarketWatch, Investing.com, גלובס שוק ההון, Bloomberg, Reuters +
   Google News מסונן למקורות אמינים (`TRUSTED`). רק 26 השעות האחרונות, עד 6 כתבות ממקור ועד 50 לנושא (`PER_TOPIC`),
   לסירוגין בין המקורות
 - **סיכום**: ה-AI בוחר ומתרגם רק מתוך הכתבות שקיבל. הקישור והמקור ליד כל פריט מגיעים מהנתונים, לא מה-AI
