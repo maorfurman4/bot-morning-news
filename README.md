@@ -37,7 +37,9 @@
 - **סיכום**: ה-AI בוחר ומתרגם רק מתוך הכתבות שקיבל. הקישור והמקור ליד כל פריט מגיעים מהנתונים, לא מה-AI
 
 ## מתי
-כל בוקר ב-02:30 UTC = 04:30 בחורף / 05:30 בקיץ (GitHub Actions, `.github/workflows/main.yml`). הרצה ידנית: Actions → "Daily Morning Briefing Analyst" → Run workflow.
+כל בוקר ב-06:00–06:59 בחורף / 07:00–07:59 בקיץ — Vercel Cron בפרויקט של יוסי (bot-task-calendar) מפעיל את
+`.github/workflows/main.yml`. ה-schedule של GitHub נשאר כגיבוי, ומדלג אם הבריף כבר נשלח היום (GitHub מאחר אותו ב-3–6 שעות).
+הרצה ידנית: Actions → "Daily Morning Briefing Analyst" → Run workflow.
 
 ## קבצים
 | קובץ | תפקיד |

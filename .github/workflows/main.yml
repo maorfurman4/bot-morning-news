@@ -1,30 +1,50 @@
 name: Daily Morning Briefing Analyst
 
 on:
+  # ההפעלה הרגילה: Vercel Cron ביוסי (bot-task-calendar/vercel.json) קורא ל-workflow_dispatch כל בוקר
+  # ב-06:00–06:59 (חורף) / 07:00–07:59 (קיץ). ה-schedule כאן רק גיבוי — GitHub מאחר אותו ב-3–6 שעות
   schedule:
-    # 02:30 UTC = 05:30 שעון קיץ / 04:30 שעון חורף
     - cron: '30 1 * * *'
   workflow_dispatch: # מאפשר לך להריץ ידנית בלחיצת כפתור
+
+permissions:
+  contents: read
+  actions: read
 
 jobs:
   run-analyst-agent:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Skip if today's brief was already sent
+      # רק בגיבוי המתוזמן: אם הבריף כבר נשלח היום (ע"י Vercel) — לא שולחים פעמיים
+      if: github.event_name == 'schedule'
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        sent=$(gh run list -R "$GITHUB_REPOSITORY" --workflow main.yml --status success \
+               --created ">=$(date -u +%F)" --json databaseId -q length)
+        echo "already sent today: $sent"
+        if [ "$sent" -gt 0 ]; then echo "SKIP=1" >> "$GITHUB_ENV"; fi
+
     - name: Checkout repository
+      if: env.SKIP != '1'
       uses: actions/checkout@v3
 
     - name: Set up Python
+      if: env.SKIP != '1'
       uses: actions/setup-python@v4
       with:
         python-version: '3.12'
 
     - name: Install dependencies
+      if: env.SKIP != '1'
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
     - name: Run Analyst Agent
+      if: env.SKIP != '1'
       env:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         TELEGRAM_TOKEN_NEWS: ${{ secrets.TELEGRAM_TOKEN_NEWS }}
