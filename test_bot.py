@@ -221,16 +221,24 @@ bot.save_tv(now.date(), tv)
 assert bot.tv_last_night(now.date() + bot.timedelta(days=1)) == tv and bot.tv_last_night(now.date()) == []
 bot.SCHEDULE_FILE = real_file
 rows = [{"label": "הישרדות", "text": "שי חי הודח", "ids": []}, {"label": "האח הגדול", "text": "המצאה", "ids": []}]
-shown_rows = bot.recap_rows("ent", rows, tv=["הישרדות - פרק הדחה!"])
+shown_rows = bot.recap_rows("ent", rows, tv_last=["הישרדות - פרק הדחה!"])
 assert [r["label"] for r, _ in shown_rows] == ["הישרדות"]
 # בלי כפל: ידיעה על תוכנית שכבר בבלוק — לא מוצגת
 surv = dict(good, id="w2", source_title="Iran talks", title="כוכב הישרדות מתראיין")
-blocks = bot.topic_blocks("ent", {"ent": [surv, good], "ent_recap": rows, "ent_tv": ["הישרדות - פרק הדחה!"]})
+blocks = bot.topic_blocks("ent", {"ent": [surv, good], "ent_recap": rows, "ent_tv_last": ["הישרדות - פרק הדחה!"]})
 assert "שי חי הודח" in blocks[0] and len(blocks) == 2 and "הישרדות" not in blocks[1]
 
 # בידור: כתבות מחיפושי הריאליטי — לבלוק בלבד; השאר — לידיעות
 gen, rea = bot.split_reality([{"id": "e1"}, {"id": "e2", "found_by_search": "הישרדות"}])
 assert [e["id"] for e in gen] == ["e1"] and [e["id"] for e in rea] == ["e2"]
+# הלוח של הערב — רק לשורת "הערב" בפתיחת עונה; שורה אחת לכל תוכנית
+tonight = ["הישרדות - פרק הדחה!", "הכוכב הבא - פרק 1"]
+got = bot.recap_rows("ent", [{"label": "הישרדות - פרק הדחה! (לוח שידורים)", "text": "מתוכנן הערב", "ids": []},
+                             {"label": "הערב", "text": "הכוכב הבא — פרק 1 של העונה, 21:00", "ids": []},
+                             {"label": "הערב", "text": "הישרדות — פרק הדחה", "ids": []},
+                             {"label": "הזמר במסכה", "text": "x", "ids": ["w1"]}, {"label": "הזמר במסכה", "text": "y", "ids": ["w1"]}],
+                     tv_tonight=tonight)
+assert [(r["label"], r["text"][:9]) for r, _ in got] == [("הערב", "הכוכב הבא"), ("הזמר במסכה", "x")]
 bot.FAILURES.clear()
 
 print("ok")

@@ -772,16 +772,25 @@ def in_tv(label: str, tv: list) -> bool:
     name = re.sub(r"[\"'״׳]", "", label).strip()
     return bool(name) and any(name in re.sub(r"[\"'״׳]", "", t) for t in tv)
 
-def recap_rows(key: str, rows: list, results: list = (), shown: set = frozenset(), tv: list = ()) -> list:
-    """השורות של ה-AI שבאמת יוצגו בבלוק: (שורה, ids)."""
-    out = []
+def recap_rows(key: str, rows: list, results: list = (), shown: set = frozenset(),
+               tv_last: list = (), tv_tonight: list = ()) -> list:
+    """השורות של ה-AI שבאמת יוצגו בבלוק: (שורה, ids). שורה אחת לכל תוכנית."""
+    out, shows = [], []
     for r in rows or []:
         ids = [i for i in r.get("ids") or [] if i in ITEMS]
         text = r.get("text") or ""
         label = r.get("label") or ""
-        on_tv = in_tv(label, tv) or (label == "הערב" and any(in_tv(w, tv) for w in [text.split(" — ")[0], text.split(",")[0]]))
+        if label == "הערב":  # רק פרק פתיחה שבאמת בלוח של הערב
+            on_tv = bool(re.search(r"פרק 1\b|בכורה|עונה חדשה|פתיחת העונה", text)) and any(
+                in_tv(w, tv_tonight) for w in re.split(r" — |, | - ", text)[:2])
+        else:
+            on_tv = in_tv(label, tv_last)
         if not (label and text and (ids or on_tv)):
             continue  # רק שורה שמבוססת על כתבה אמיתית או על תוכנית שבאמת בלוח השידורים
+        show = re.sub(r"[\"'״׳]", "", label).split(" - ")[0].split(" (")[0].strip()
+        if label != "הערב" and any(show.startswith(x) or x.startswith(show) for x in shows):
+            continue  # שורה אחת לכל תוכנית
+        shows.append(show)
         if any(all(n in re.findall(r"\d+", text) for n in re.findall(r"\d+", x["game"])[-2:]) for x in results):
             continue  # אותו משחק כמו תוצאה רשמית — כבר מוצג
         if key == "sport" and not ISRAELI_HE.search(text):
@@ -793,10 +802,11 @@ def recap_rows(key: str, rows: list, results: list = (), shown: set = frozenset(
         out.append((r, ids))
     return out
 
-def recap_block(key: str, rows: list, results: list = (), he: dict = {}, shown: set = frozenset(), tv: list = ()) -> str:
+def recap_block(key: str, rows: list, results: list = (), he: dict = {}, shown: set = frozenset(),
+                tv_last: list = (), tv_tonight: list = ()) -> str:
     icon, title, _ = RECAP[key]
     out = [result_line(r, he) for r in results]  # תוצאות רשמיות — תמיד, ראשונות
-    for r, ids in recap_rows(key, rows, results, shown, tv):
+    for r, ids in recap_rows(key, rows, results, shown, tv_last, tv_tonight):
         line = f'• <b>{esc(r["label"])}</b> — {esc(r["text"])}'
         if ids:
             line += f' · <a href="{esc(ITEMS[ids[0]]["link"])}">{esc(ITEMS[ids[0]]["source"])}</a>'
@@ -808,9 +818,10 @@ def topic_blocks(key: str, ai: dict, shown: set | None = None) -> list:
     seen = shown if shown is not None else set()
     block = ""
     if key in RECAP:
-        rows, results, tv = ai.get(f"{key}_recap") or [], ai.get(f"{key}_results") or [], ai.get(f"{key}_tv") or []
-        block = recap_block(key, rows, results, ai.get(f"{key}_he") or {}, frozenset(seen), tv)
-        shown_rows = recap_rows(key, rows, results, frozenset(seen), tv)
+        rows, results = ai.get(f"{key}_recap") or [], ai.get(f"{key}_results") or []
+        tv = ai.get(f"{key}_tv_last") or [], ai.get(f"{key}_tv_tonight") or []
+        block = recap_block(key, rows, results, ai.get(f"{key}_he") or {}, frozenset(seen), *tv)
+        shown_rows = recap_rows(key, rows, results, frozenset(seen), *tv)
         seen |= {ITEMS[i]["link"] for _, ids in shown_rows for i in ids}
         labels = [re.sub(r"[\"'״׳]", "", r["label"]) for r, _ in shown_rows if r["label"] != "הערב"]
     else:
@@ -966,7 +977,7 @@ def build() -> list:
                 ai[f"{key}_recap"] = result.get("recap") or []
                 ai[f"{key}_he"] = result.get("he_names") if isinstance(result.get("he_names"), dict) else {}
     ai["sport_results"] = results
-    ai["ent_tv"] = [x["title"] for x in tv_last + tv_tonight]
+    ai["ent_tv_last"], ai["ent_tv_tonight"] = [x["title"] for x in tv_last], [x["title"] for x in tv_tonight]
     count = lambda: {k: len(ai.get(k) or []) for k in ("sport", "ent")}
     print(f"🔎 candidates: {count()}")
     drop_stale(ai, stale_links(ai, now))
