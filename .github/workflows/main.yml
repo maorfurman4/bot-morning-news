@@ -11,6 +11,10 @@ on:
         description: "תצוגה מקדימה — מדפיס ללוג, לא שולח לטלגרם"
         type: boolean
         default: false
+      test_topics:
+        description: "בדיקה בפרטי: רק הנושאים האלה (למשל sport,ent), נשלח רק אליך — לא לערוץ"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -55,4 +59,4 @@ jobs:
         TELEGRAM_TOKEN_NEWS: ${{ secrets.TELEGRAM_TOKEN_NEWS }}
         CHAT_ID_NEWS: ${{ secrets.CHAT_ID_NEWS }}
         NEWS_CHANNEL_ID: ${{ secrets.NEWS_CHANNEL_ID }}
-      run: python bot.py ${{ inputs.dry_run && '--dry-run' || '' }}
+      run: python bot.py ${{ inputs.dry_run && '--dry-run' || '' }} ${{ inputs.test_topics && format('--only={0}', inputs.test_topics) || '' }}
