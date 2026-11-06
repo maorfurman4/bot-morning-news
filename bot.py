@@ -62,9 +62,11 @@ HOLDINGS = {
     "GOOG": ("Alphabet", "גוגל"),
 }
 
-def gn(query: str = "", lang: str = "en") -> str:
-    """כתובת Google News: חיפוש (24 שעות) או הכותרות הראשיות."""
+def gn(query: str = "", lang: str = "en", topic: str = "") -> str:
+    """כתובת Google News: חיפוש (24 שעות), מדור (SPORTS/ENTERTAINMENT — מדורג לפי מה שחם עכשיו) או הכותרות הראשיות."""
     loc = "hl=he&gl=IL&ceid=IL:he" if lang == "he" else "hl=en-US&gl=US&ceid=US:en"
+    if topic:
+        return f"https://news.google.com/rss/headlines/section/topic/{topic}?{loc}"
     if not query:
         return f"https://news.google.com/rss?{loc}"
     return f"https://news.google.com/rss/search?q={quote_plus(query + ' when:1d')}&{loc}"
@@ -122,6 +124,7 @@ FEEDS = {
         (None, gn("site:apnews.com world")),
     ],
     "sport": [
+        (None, gn(lang="he", topic="SPORTS"), 15),  # מה שחם עכשיו בספורט בישראל, מדורג
         (None, gn("דני אבדיה", "he")),
         ("ynet ספורט", "https://www.ynet.co.il/Integration/StoryRss3.xml"),
         (None, gn("ישראלי מדליה OR ג'ודו OR אליפות העולם", "he")),
@@ -130,10 +133,11 @@ FEEDS = {
         ("BBC Sport", "https://feeds.bbci.co.uk/sport/rss.xml"),
     ],
     "ent": [
+        (None, gn(lang="he", topic="ENTERTAINMENT"), 15),  # מה שחם עכשיו בבידור בישראל, מדורג
+        (None, gn("האח הגדול OR הישרדות OR חתונמי", "he"), 12),
         ("ynet בידור", "https://www.ynet.co.il/Integration/StoryRss538.xml"),
         ("וואלה סלבס", "https://rss.walla.co.il/feed/3600"),
         (None, gn("site:mako.co.il ריאליטי OR האח הגדול OR הישרדות", "he")),
-        (None, gn("האח הגדול OR הישרדות OR חתונמי", "he")),
     ],
     "market": [
         ("CNBC", "https://www.cnbc.com/id/20910258/device/rss/rss.html"),
@@ -157,7 +161,7 @@ TRUSTED = (
     "ieee", "fortune", "business insider", "the information", "new york times", "france 24", "the register",
     "times of israel", "haaretz", "jerusalem post", "i24", "ynet", "mako", "n12",
     "globes", "calcalist", "themarker", "הארץ", "גלובס", "כלכליסט", "דה מרקר",
-    "מעריב", "כאן 11", "וואלה", "ישראל היום", "חדשות 13", "רשת 13", "פנאי פלוס", "sport5",
+    "מעריב", "כאן 11", "וואלה", "ישראל היום", "חדשות 13", "רשת 13", "פנאי פלוס", "sport5", "ספורט 1", "היום",
 )
 
 SEP = "〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️"
@@ -255,7 +259,7 @@ def read_feed(name: str | None, url: str, now: datetime, limit: int = PER_FEED) 
 
 def get_feed(category: str, now: datetime) -> list:
     with ThreadPoolExecutor(8) as pool:
-        per_feed = list(pool.map(lambda f: read_feed(*f, now), FEEDS[category]))
+        per_feed = list(pool.map(lambda f: read_feed(f[0], f[1], now, *f[2:]), FEEDS[category]))
     # לסירוגין בין המקורות: הכתבה הראשונה מכל מקור, אחר כך השנייה... כך התקרה לא מוחקת מקורות שלמים
     mixed = [i for row in zip_longest(*per_feed) for i in row if i]
     return fresh(mixed, now)[:PER_TOPIC]
@@ -401,7 +405,9 @@ RULES = """
 """
 
 TOPIC_FORMAT = """
-בחר בדיוק את 5 הידיעות החשובות והרלוונטיות ביותר בנושא, לפי סדר חשיבות. אם יש פחות מ-5 ידיעות שבאמת שייכות לנושא — רק אותן;
+בחר בדיוק את 5 הידיעות החשובות והרלוונטיות ביותר בנושא, לפי סדר חשיבות.
+הכי עדכני קודם: age_hours = כמה שעות עברו מהפרסום. העדף את הטרי ביותר, ואת הסיפורים שמופיעים בכמה כתבות וכמה מקורות —
+זה מה שכולם מדברים עליו עכשיו. ידיעה בת יותר מ-12 שעות — רק אם היא באמת הסיפור הגדול. אם יש פחות מ-5 ידיעות שבאמת שייכות לנושא — רק אותן;
 לעולם לא למלא בידיעות מנושא אחר (או ברכילות, חוץ מבנושא הבידור).
 
 החזר JSON בלבד:
@@ -431,11 +437,13 @@ MARKET_FORMAT = """
 
 ITEMS = {}  # id → כתבה, כדי שהקישורים והמקורות יגיעו מהנתונים ולא מה-AI
 
-def register(prefix: str, items: list) -> list:
+def register(prefix: str, items: list, now: datetime | None = None) -> list:
     out = []
     for n, i in enumerate(items, 1):
         ITEMS[f"{prefix}{n}"] = i
         entry = {"id": f"{prefix}{n}", "source": i["source"], "title": i["title"]}
+        if now:  # כדי שה-AI יעדיף את הטרי ביותר
+            entry["age_hours"] = max(0, round((now - i["published"]).total_seconds() / 3600))
         if not i["summary"].startswith(i["title"][:40]):  # ב-Google News התקציר הוא שוב הכותרת — טוקנים לפח
             entry["summary"] = i["summary"]
         out.append(entry)
@@ -585,7 +593,7 @@ def build() -> list:
     insiders = get_insiders(datetime.now(timezone.utc))
 
     print("📥 News...")
-    news = {cat: register(cat[0], get_feed(cat, now)) for cat in FEEDS}
+    news = {cat: register(cat[0], get_feed(cat, now), now) for cat in FEEDS}
     with ThreadPoolExecutor(8) as pool:
         per_stock = dict(zip(HOLDINGS, pool.map(lambda h: read_feed(None, gn(f'"{h[0]}" stock'), now, 3), HOLDINGS.values())))
     stock_news = {t: register(f"h{t}_", items) for t, items in per_stock.items()}

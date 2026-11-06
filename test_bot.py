@@ -38,6 +38,7 @@ dup = {"title": "Intel rises 3%", "summary": "Intel rises 3%  Reuters", "source"
 own = {"title": "Rain in Tel Aviv", "summary": "Heavy rain expected tomorrow", "source": "BBC", "link": "l", "published": now}
 sent = bot.register("z", [dup, own])
 assert "summary" not in sent[0] and sent[1]["summary"] == "Heavy rain expected tomorrow"
+assert bot.register("y", [own], now + bot.timedelta(hours=5))[0]["age_hours"] == 5  # ה-AI יודע כמה הכתבה טרייה
 assert bot.MODELS[0] == "gpt-5-mini"
 
 # פורמט שוק
