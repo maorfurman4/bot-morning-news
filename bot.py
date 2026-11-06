@@ -541,7 +541,8 @@ RECAP = {
             "found_by_search = על איזו תוכנית חיפשנו כשהכתבה נמצאה — רמז, לא ודאות. "
             "label = שם התוכנית, text = מה שהכי מדברים עליו — קודם כל מי הודח, נחשף או ניצח. "
             "תוכנית שאין עליה כתבה מה-24 שעות האחרונות ולא בלוח — לא להזכיר. "
-            "ה-items — בידור וסלבס אחרים, לא הריאליטי שכבר בבלוק (כדי שיהיו 5 ידיעות נוספות). חריג אחד: airing_tonight = הלוח של הערב — אם יש בו פרק ראשון "
+            "ל-recap: reality_articles (כתבות מחיפושי הריאליטי) והלוח. ה-items — רק מ-articles: בידור וסלבס, "
+            "לא הריאליטי שכבר בבלוק (כדי שיהיו 5 ידיעות נוספות). חריג אחד: airing_tonight = הלוח של הערב — אם יש בו פרק ראשון "
             "של עונה חדשה של ריאליטי (פרק 1, בכורה, עונה חדשה) — שורה עם label = \"הערב\" ו-text = שם התוכנית, ערוץ ושעה"),
 }
 RECAP_FORMAT = """
@@ -571,6 +572,10 @@ MARKET_FORMAT = """
 """
 
 ITEMS = {}  # id → כתבה, כדי שהקישורים והמקורות יגיעו מהנתונים ולא מה-AI
+
+def split_reality(entries: list) -> tuple:
+    """בידור: כתבות מחיפושי הריאליטי — רק לבלוק; שאר הכתבות — ל-5 הידיעות (אחרת ה-AI בוחר ריאליטי גם לידיעות)."""
+    return [e for e in entries if not e.get("found_by_search")], [e for e in entries if e.get("found_by_search")]
 
 def coverage(items: list) -> list:
     """לכל כתבה: בכמה מקורות שונים מופיע אותו סיפור (3+ מילים משותפות בכותרת) — "כולם מדברים על זה"."""
@@ -928,9 +933,11 @@ def build() -> list:
     jobs = {key: (RULES + f"\nהנושא: {name} — {rule}\n" + (WEEKEND_ENT if key == "ent" and weekend else "")
                   + TOPIC_FORMAT.replace("עד 7", "עד 10" if key in LIGHT else "עד 7")
                   + (RECAP_FORMAT.format(rule=RECAP[key][2]) if key in RECAP else ""),
-                  {"articles": news[key], **({"results": results} if key == "sport" else {}),
-                   **({"aired_last_night": tv_last, "airing_tonight": tv_tonight} if key == "ent" else {})})
+                  {"articles": news[key], **({"results": results} if key == "sport" else {})})
             for key, (_, name, rule) in TOPICS.items()}
+    general, reality = split_reality(news["ent"])
+    jobs["ent"][1].update({"articles": general, "reality_articles": reality,
+                           "aired_last_night": tv_last, "airing_tonight": tv_tonight})
     jobs["market"] = (RULES + MARKET_FORMAT, {
         "markets": [re.sub(r"<[^>]+>", "", r) for r in market_rows],
         "holdings": [

@@ -227,6 +227,10 @@ assert [r["label"] for r, _ in shown_rows] == ["הישרדות"]
 surv = dict(good, id="w2", source_title="Iran talks", title="כוכב הישרדות מתראיין")
 blocks = bot.topic_blocks("ent", {"ent": [surv, good], "ent_recap": rows, "ent_tv": ["הישרדות - פרק הדחה!"]})
 assert "שי חי הודח" in blocks[0] and len(blocks) == 2 and "הישרדות" not in blocks[1]
+
+# בידור: כתבות מחיפושי הריאליטי — לבלוק בלבד; השאר — לידיעות
+gen, rea = bot.split_reality([{"id": "e1"}, {"id": "e2", "found_by_search": "הישרדות"}])
+assert [e["id"] for e in gen] == ["e1"] and [e["id"] for e in rea] == ["e2"]
 bot.FAILURES.clear()
 
 print("ok")
