@@ -128,6 +128,15 @@ def fake_post(*a, **k):
 real_post, bot.requests.post = bot.requests.post, fake_post
 assert bot.ask_ai("s", {}) == {"items": []} and not tries
 bot.requests.post = real_post
+
+# 📺 בלוק "אמש" בראש הבידור/ספורט; שורה בלי כתבה אמיתית לא מוצגת; ריק → אין בלוק
+msgs, _ = bot.render(now, [], None, {}, {"ent": [good], "ent_recap": [
+    {"label": "האח הגדול", "text": "ענבל אלדן הודחה", "ids": ["w1"]}, {"label": "המצאה", "text": "x", "ids": ["zz"]}]})
+ent = next(m for m in msgs if "בידור" in m[0] or "בידור" in m[1])
+assert any(b.startswith("📺 <b>אמש בריאליטי</b>\n• <b>האח הגדול</b> — ענבל אלדן הודחה") for b in ent)
+assert "המצאה" not in "\n".join(ent)
+msgs, _ = bot.render(now, [], None, {}, {"sport": [good], "sport_recap": []})
+assert not any("🏟️" in b for b in sum(msgs, []))
 bot.FAILURES.clear()
 
 print("ok")

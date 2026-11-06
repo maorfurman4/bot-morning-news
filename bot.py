@@ -126,6 +126,8 @@ FEEDS = {
     "sport": [
         (None, gn(lang="he", topic="SPORTS"), 15),  # מה שחם עכשיו בספורט בישראל, מדורג
         (None, gn("דני אבדיה", "he")),
+        (None, gn("יורוליג OR יורוקאפ", "he"), 8),
+        (None, gn('"ליגת העל" OR "ליגת ווינר"', "he"), 8),
         ("ynet ספורט", "https://www.ynet.co.il/Integration/StoryRss3.xml"),
         (None, gn("ישראלי מדליה OR ג'ודו OR אליפות העולם", "he")),
         ("וואלה ספורט", "https://rss.walla.co.il/feed/156"),
@@ -134,7 +136,7 @@ FEEDS = {
     ],
     "ent": [
         (None, gn(lang="he", topic="ENTERTAINMENT"), 15),  # מה שחם עכשיו בבידור בישראל, מדורג
-        (None, gn("האח הגדול OR הישרדות OR חתונמי", "he"), 12),
+        (None, gn('הישרדות OR "הזמר במסכה" OR "האח הגדול" OR חתונמי OR "מאסטר שף" OR "הכוכב הבא"', "he"), 15),
         ("ynet בידור", "https://www.ynet.co.il/Integration/StoryRss538.xml"),
         ("וואלה סלבס", "https://rss.walla.co.il/feed/3600"),
         (None, gn("site:mako.co.il ריאליטי OR האח הגדול OR הישרדות", "he")),
@@ -407,11 +409,26 @@ RULES = """
 TOPIC_FORMAT = """
 בחר בדיוק את 5 הידיעות החשובות והרלוונטיות ביותר בנושא, לפי סדר חשיבות.
 הכי עדכני קודם: age_hours = כמה שעות עברו מהפרסום. העדף את הטרי ביותר, ואת הסיפורים שמופיעים בכמה כתבות וכמה מקורות —
-זה מה שכולם מדברים עליו עכשיו. ידיעה בת יותר מ-12 שעות — רק אם היא באמת הסיפור הגדול. אם יש פחות מ-5 ידיעות שבאמת שייכות לנושא — רק אותן;
+זה מה שכולם מדברים עליו עכשיו. הכל מ-24 השעות האחרונות. אם יש פחות מ-5 ידיעות שבאמת שייכות לנושא — רק אותן;
 לעולם לא למלא בידיעות מנושא אחר (או ברכילות, חוץ מבנושא הבידור).
 
 החזר JSON בלבד:
 {"items": [{"id": "...", "source_title": "...", "emoji": "אימוג'י אחד שמתאים לידיעה הספציפית, לא דגל", "title": "...", "bottom_line": "..."}]}
+"""
+
+# בלוק קבוע בראש ההודעה: "מה קרה אמש" — רק לנושאים האלה; ריק → לא מוצג
+RECAP = {
+    "sport": ("🏟️", "אמש במגרשים",
+              "המשחקים החשובים מאמש: קבוצות ישראליות באירופה (יורוליג, יורוקאפ, מפעלי אירופה בכדורגל), משחקי צמרת "
+              "בליגת העל, נבחרת ישראל; אבדיה וישראלים בחו\"ל — רק אם היה משחק מטורף או חדשה מרהיבה. "
+              "label = הקבוצה או המפעל, text = התוצאה כמו שכתובה בכתבה + חצי משפט. בלי משחקים סתמיים"),
+    "ent": ("📺", "אמש בריאליטי",
+            "כל ריאליטי ששודר אמש או בלילה: label = שם התוכנית, text = מה שהכי מדברים עליו — קודם כל מי הודח, "
+            "נחשף או ניצח. תוכנית שלא שודרה — לא להזכיר"),
+}
+RECAP_FORMAT = """
+בנוסף החזר באותו JSON: "recap": [{{"label": "...", "text": "...", "ids": ["..."]}}] — {rule}.
+שורה קצרה לכל פריט, רק ממה שכתוב בכתבות; אם אין — רשימה ריקה. ה-items לא חוזרים על מה שב-recap.
 """
 
 MARKET_FORMAT = """
@@ -504,6 +521,16 @@ def article(e: dict, need_id: bool = True) -> str:
         out += f"\n🔗 <a href=\"{esc(item['link'])}\">לקריאת הכתבה המלאה</a> · {esc(item['source'])}"
     return out
 
+def recap_block(key: str, rows: list) -> str:
+    icon, title, _ = RECAP[key]
+    out = []
+    for r in rows or []:
+        ids = [i for i in r.get("ids") or [] if i in ITEMS]
+        if r.get("label") and r.get("text") and ids:  # רק שורה שמבוססת על כתבה אמיתית
+            src = ITEMS[ids[0]]
+            out.append(f'• <b>{esc(r["label"])}</b> — {esc(r["text"])} · <a href="{esc(src["link"])}">{esc(src["source"])}</a>')
+    return f"{icon} <b>{title}</b>\n" + "\n".join(out) if out else ""
+
 def render(today: datetime, market_rows: list, close_date, holdings: dict, ai: dict, channel: bool = False,
            insiders: list = ()) -> tuple:
     """(הודעות לערוץ, הודעות פרטיות). בערוץ — בריף כללי בלבד; המניות שלך ודוח התקלות — רק בפרטי."""
@@ -540,7 +567,8 @@ def render(today: datetime, market_rows: list, close_date, holdings: dict, ai: d
     ]
 
     date = f"<i>{today:%d/%m/%Y}</i>"
-    public = [(f"{icon} <b>{name}</b> · {date}", [article(e) for e in (ai.get(key) or [])[:5]]) for key, (icon, name, _) in TOPICS.items()]
+    public = [(f"{icon} <b>{name}</b> · {date}", [recap_block(key, ai.get(f"{key}_recap")) if key in RECAP else "",
+                                                       *[article(e) for e in (ai.get(key) or [])[:5]]]) for key, (icon, name, _) in TOPICS.items()]
     public.append((f"📈 <b>שוק ההון</b> · {date}", market))
     private = [
         (f"💼 <b>המניות שלך</b> · {date}", mine if holdings else []),
@@ -599,7 +627,8 @@ def build() -> list:
     stock_news = {t: register(f"h{t}_", items) for t, items in per_stock.items()}
     print("📰 " + ", ".join(f"{k}: {len(v)}" for k, v in news.items()) + f", stocks: {sum(map(len, stock_news.values()))}")
 
-    jobs = {key: (RULES + f"\nהנושא: {name} — {rule}\n" + TOPIC_FORMAT, {"articles": news[key]})
+    jobs = {key: (RULES + f"\nהנושא: {name} — {rule}\n" + TOPIC_FORMAT
+                  + (RECAP_FORMAT.format(rule=RECAP[key][2]) if key in RECAP else ""), {"articles": news[key]})
             for key, (_, name, rule) in TOPICS.items()}
     jobs["market"] = (RULES + MARKET_FORMAT, {
         "markets": [re.sub(r"<[^>]+>", "", r) for r in market_rows],
@@ -625,6 +654,7 @@ def build() -> list:
             ai.update(result)
         else:
             ai[key] = result.get("items", [])
+            ai[f"{key}_recap"] = result.get("recap") or []
     print("🧠 AI returned: " + ", ".join(f"{k}: {len(v)}" for k, v in ai.items() if isinstance(v, list)) + f", insiders: {len(insiders)}")
     public, private = render(now.astimezone(IL_TZ), market_rows, close_date, holdings, ai, channel=bool(CHANNEL_ID),
                              insiders=insiders)
