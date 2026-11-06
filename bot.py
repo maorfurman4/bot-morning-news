@@ -404,6 +404,41 @@ def get_results(now: datetime) -> list:
                     out.append({"comp": comp, "game": f"{names[0]} {t['home']['score']}-{t['away']['score']} {names[1]}"})
     return out
 
+# ── לוח שידורים (yes): כאן 11, קשת 12, רשת 13 ─────────────────────────────────
+# ה-API נותן רק מהיום והלאה — לכן כל בוקר שומרים את הלוח של היום (schedule.json, נשמר ב-git ע"י ה-workflow),
+# ולמחרת בבוקר יודעים בדיוק מה שודר אמש
+TV = {"CH30": "כאן 11", "CH34": "קשת 12", "CH36": "רשת 13"}
+SCHEDULE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "schedule.json")
+
+def get_schedule(day) -> list:
+    """פריים טיים (18:00–01:00) של היום בשלושת הערוצים."""
+    out = []
+    for ch, name in TV.items():
+        try:
+            data = json.loads(fetch(f"https://svc.yes.co.il/api/content/broadcast-schedule/channels/{ch}"
+                                    f"?date={day.year}-{day.month}-{day.day}&ignorePastItems=false"))
+        except Exception as ex:
+            fail(f"לוח שידורים {name}", ex)
+            continue
+        for it in data.get("items") or []:
+            start = datetime.fromisoformat(it["starts"].replace("Z", "+00:00")).astimezone(IL_TZ)
+            if start.hour >= 18 or start.hour < 1:
+                out.append({"channel": name, "time": f"{start:%H:%M}", "title": it.get("title") or "",
+                            "description": (it.get("description") or "")[:200]})
+    return sorted(out, key=lambda x: (x["channel"], x["time"]))
+
+def tv_last_night(today) -> list:
+    try:
+        with open(SCHEDULE_FILE, encoding="utf-8") as f:
+            saved = json.load(f)
+    except (OSError, ValueError):
+        return []
+    return saved.get("items") or [] if saved.get("date") == str(today - timedelta(days=1)) else []
+
+def save_tv(today, items: list) -> None:
+    with open(SCHEDULE_FILE, "w", encoding="utf-8") as f:
+        json.dump({"date": str(today), "items": items}, f, ensure_ascii=False, indent=1)
+
 def get_holdings() -> dict:
     out = {}
     for ticker in HOLDINGS:
@@ -499,12 +534,15 @@ RECAP = {
               "+ חצי משפט. רק משחקים עם קבוצה או שחקן ישראלי. בלי משחקים סתמיים. "
               "וגם \"he_names\": {\"<שם קבוצה באנגלית מ-results>\": \"<השם המקובל בעברית>\"} לכל קבוצה ב-results"),
     "ent": ("📺", "אמש בריאליטי",
+            "aired_last_night = לוח השידורים של אמש (כאן 11, קשת 12, רשת 13). אם הוא לא ריק — שורה לכל תוכנית "
+            "ריאליטי ששודרה בו, ורק מהן: text = מה קרה בפרק — קודם מהכתבות (מי הודח, נחשף, ניצח, מה הסעיר), "
+            "ואם אין כתבה — מתיאור הפרק בלוח (אז ids ריק). אם aired_last_night ריק — "
             "כל ריאליטי שמדברים עליו ב-24 השעות האחרונות (פרק של אתמול, הדחה, דרמה, ריב עם השופטים): "
             "found_by_search = על איזו תוכנית חיפשנו כשהכתבה נמצאה — רמז, לא ודאות. "
             "label = שם התוכנית, text = מה שהכי מדברים עליו — קודם כל מי הודח, נחשף או ניצח. "
-            "תוכנית שאין עליה כתבה מה-24 שעות האחרונות — לא להזכיר. "
-            "ה-items — בידור וסלבס אחרים, לא הריאליטי שכבר בבלוק (כדי שיהיו 5 ידיעות נוספות). חריג אחד: אם הערב עולה פרק פתיחה של עונה חדשה של ריאליטי — "
-            "שורה עם label = \"הערב\" ו-text = שם התוכנית ומה צפוי"),
+            "תוכנית שאין עליה כתבה מה-24 שעות האחרונות ולא בלוח — לא להזכיר. "
+            "ה-items — בידור וסלבס אחרים, לא הריאליטי שכבר בבלוק (כדי שיהיו 5 ידיעות נוספות). חריג אחד: airing_tonight = הלוח של הערב — אם יש בו פרק ראשון "
+            "של עונה חדשה של ריאליטי (פרק 1, בכורה, עונה חדשה) — שורה עם label = \"הערב\" ו-text = שם התוכנית, ערוץ ושעה"),
 }
 RECAP_FORMAT = """
 בנוסף החזר באותו JSON: "recap": [{{"label": "...", "text": "...", "ids": ["..."]}}] — {rule}.
@@ -725,31 +763,39 @@ def article(e: dict, need_id: bool = True, light: bool = False) -> str:
         out += f"\n🔗 <a href=\"{esc(item['link'])}\">לקריאת הכתבה המלאה</a> · {esc(item['source'])}"
     return out
 
-def recap_rows(key: str, rows: list, results: list = (), shown: set = frozenset()) -> list:
+def in_tv(label: str, tv: list) -> bool:
+    name = re.sub(r"[\"'״׳]", "", label).strip()
+    return bool(name) and any(name in re.sub(r"[\"'״׳]", "", t) for t in tv)
+
+def recap_rows(key: str, rows: list, results: list = (), shown: set = frozenset(), tv: list = ()) -> list:
     """השורות של ה-AI שבאמת יוצגו בבלוק: (שורה, ids)."""
     out = []
     for r in rows or []:
         ids = [i for i in r.get("ids") or [] if i in ITEMS]
         text = r.get("text") or ""
-        if not (r.get("label") and text and ids):
-            continue  # רק שורה שמבוססת על כתבה אמיתית
+        label = r.get("label") or ""
+        on_tv = in_tv(label, tv) or (label == "הערב" and any(in_tv(w, tv) for w in [text.split(" — ")[0], text.split(",")[0]]))
+        if not (label and text and (ids or on_tv)):
+            continue  # רק שורה שמבוססת על כתבה אמיתית או על תוכנית שבאמת בלוח השידורים
         if any(all(n in re.findall(r"\d+", text) for n in re.findall(r"\d+", x["game"])[-2:]) for x in results):
             continue  # אותו משחק כמו תוצאה רשמית — כבר מוצג
         if key == "sport" and not ISRAELI_HE.search(text):
             continue  # בספורט — רק משחקים עם קבוצה או שחקן ישראלי
         if key != "sport" and SPORTY.search(text):
             continue  # ספורט לא נכנס לבלוק הבידור
-        if all(ITEMS[i]["link"] in shown for i in ids):
+        if ids and all(ITEMS[i]["link"] in shown for i in ids):
             continue  # כבר הוצג בנושא קודם
         out.append((r, ids))
     return out
 
-def recap_block(key: str, rows: list, results: list = (), he: dict = {}, shown: set = frozenset()) -> str:
+def recap_block(key: str, rows: list, results: list = (), he: dict = {}, shown: set = frozenset(), tv: list = ()) -> str:
     icon, title, _ = RECAP[key]
     out = [result_line(r, he) for r in results]  # תוצאות רשמיות — תמיד, ראשונות
-    for r, ids in recap_rows(key, rows, results, shown):
-        src = ITEMS[ids[0]]
-        out.append(f'• <b>{esc(r["label"])}</b> — {esc(r["text"])} · <a href="{esc(src["link"])}">{esc(src["source"])}</a>')
+    for r, ids in recap_rows(key, rows, results, shown, tv):
+        line = f'• <b>{esc(r["label"])}</b> — {esc(r["text"])}'
+        if ids:
+            line += f' · <a href="{esc(ITEMS[ids[0]]["link"])}">{esc(ITEMS[ids[0]]["source"])}</a>'
+        out.append(line)
     return f"{icon} <b>{title}</b>\n" + "\n".join(out) if out else ""
 
 def topic_blocks(key: str, ai: dict, shown: set | None = None) -> list:
@@ -757,14 +803,20 @@ def topic_blocks(key: str, ai: dict, shown: set | None = None) -> list:
     seen = shown if shown is not None else set()
     block = ""
     if key in RECAP:
-        rows, results = ai.get(f"{key}_recap") or [], ai.get(f"{key}_results") or []
-        block = recap_block(key, rows, results, ai.get(f"{key}_he") or {}, frozenset(seen))
-        seen |= {ITEMS[i]["link"] for _, ids in recap_rows(key, rows, results, frozenset(seen)) for i in ids}
+        rows, results, tv = ai.get(f"{key}_recap") or [], ai.get(f"{key}_results") or [], ai.get(f"{key}_tv") or []
+        block = recap_block(key, rows, results, ai.get(f"{key}_he") or {}, frozenset(seen), tv)
+        shown_rows = recap_rows(key, rows, results, frozenset(seen), tv)
+        seen |= {ITEMS[i]["link"] for _, ids in shown_rows for i in ids}
+        labels = [re.sub(r"[\"'״׳]", "", r["label"]) for r, _ in shown_rows if r["label"] != "הערב"]
+    else:
+        labels = []
     out = []
     for e in ai.get(key) or []:
         link = (resolve(e) or {}).get("link")
         if link in seen or len(out) == 5:
             continue
+        if any(l and l in re.sub(r"[\"'״׳]", "", e.get("title") or "") for l in labels):
+            continue  # התוכנית כבר בבלוק — בלי כפילות
         if a := article(e, light=key in LIGHT):
             out.append(a)
             seen.add(link)
@@ -867,10 +919,17 @@ def build() -> list:
     print("📰 " + ", ".join(f"{k}: {len(v)}" for k, v in news.items()) + f", stocks: {sum(map(len, stock_news.values()))}")
 
     results = get_results(now)
+    today_il = now.astimezone(IL_TZ).date()
+    tv_last, tv_tonight = tv_last_night(today_il), get_schedule(today_il)
+    if tv_tonight:
+        save_tv(today_il, tv_tonight)  # מחר בבוקר — "אמש"
+    print(f"📺 TV: last night {len(tv_last)}, tonight {len(tv_tonight)}")
     weekend = now.astimezone(IL_TZ).weekday() in (4, 5)  # שישי, שבת
-    jobs = {key: (RULES + f"\nהנושא: {name} — {rule}\n" + (WEEKEND_ENT if key == "ent" and weekend else "") + TOPIC_FORMAT
+    jobs = {key: (RULES + f"\nהנושא: {name} — {rule}\n" + (WEEKEND_ENT if key == "ent" and weekend else "")
+                  + TOPIC_FORMAT.replace("עד 7", "עד 10" if key in LIGHT else "עד 7")
                   + (RECAP_FORMAT.format(rule=RECAP[key][2]) if key in RECAP else ""),
-                  {"articles": news[key], **({"results": results} if key == "sport" else {})})
+                  {"articles": news[key], **({"results": results} if key == "sport" else {}),
+                   **({"aired_last_night": tv_last, "airing_tonight": tv_tonight} if key == "ent" else {})})
             for key, (_, name, rule) in TOPICS.items()}
     jobs["market"] = (RULES + MARKET_FORMAT, {
         "markets": [re.sub(r"<[^>]+>", "", r) for r in market_rows],
@@ -900,6 +959,7 @@ def build() -> list:
                 ai[f"{key}_recap"] = result.get("recap") or []
                 ai[f"{key}_he"] = result.get("he_names") if isinstance(result.get("he_names"), dict) else {}
     ai["sport_results"] = results
+    ai["ent_tv"] = [x["title"] for x in tv_last + tv_tonight]
     drop_stale(ai, stale_links(ai, now))
     move_sporty(ai)
     edit_pass(ai)

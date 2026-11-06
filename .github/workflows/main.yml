@@ -17,7 +17,7 @@ on:
         default: ""
 
 permissions:
-  contents: read
+  contents: write  # שמירת schedule.json (לוח השידורים של היום — כדי לדעת מחר מה שודר "אמש")
   actions: read
 
 jobs:
@@ -60,3 +60,15 @@ jobs:
         CHAT_ID_NEWS: ${{ secrets.CHAT_ID_NEWS }}
         NEWS_CHANNEL_ID: ${{ secrets.NEWS_CHANNEL_ID }}
       run: python bot.py ${{ inputs.dry_run && '--dry-run' || '' }} ${{ inputs.test_topics && format('--only={0}', inputs.test_topics) || '' }}
+
+    - name: Save today's TV schedule
+      # ה-API של yes נותן רק מהיום והלאה — שומרים את הלוח של היום, ומחר בבוקר הוא "אמש"
+      if: env.SKIP != '1'
+      run: |
+        [ -f schedule.json ] || exit 0
+        git config user.name "news-bot"
+        git config user.email "news-bot@users.noreply.github.com"
+        git add schedule.json
+        git diff --cached --quiet && exit 0
+        git commit -m "chore: TV schedule $(date -u +%F)"
+        git pull --rebase -q && git push

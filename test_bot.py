@@ -207,6 +207,26 @@ ent = "\n".join(next(m for m in msgs if any("בידור" in b for b in m[:2])))
 assert "נבחרת" not in ent and "הזמר במסכה" not in ent  # ספורטיבי / כבר הוצג בספורט
 tagged = bot.register("t", [dict(own, title="שחר חסון מול אופירה", show="הזמר במסכה")], now)
 assert tagged[0]["found_by_search"] == "הזמר במסכה"
+
+# 📺 לוח שידורים: פריים טיים נשמר היום ונקרא מחר כ"אמש"; שורה מהלוח בלי כתבה — רק אם התוכנית באמת בלוח
+import json as _json, os as _os, tempfile
+sched = {"items": [{"starts": "2026-11-06T19:16:00Z", "title": "הישרדות - פרק הדחה!", "description": "מועצת שבט"},
+                   {"starts": "2026-11-06T10:25:00Z", "title": "בוקר", "description": ""}]}
+real_fetch, bot.fetch = bot.fetch, lambda url: _json.dumps(sched).encode()
+tv = bot.get_schedule(now.date())
+bot.fetch = real_fetch
+assert len(tv) == 3 and tv[0]["time"] == "21:16" and tv[0]["title"].startswith("הישרדות")  # 3 ערוצים, רק ערב
+real_file, bot.SCHEDULE_FILE = bot.SCHEDULE_FILE, _os.path.join(tempfile.mkdtemp(), "s.json")
+bot.save_tv(now.date(), tv)
+assert bot.tv_last_night(now.date() + bot.timedelta(days=1)) == tv and bot.tv_last_night(now.date()) == []
+bot.SCHEDULE_FILE = real_file
+rows = [{"label": "הישרדות", "text": "שי חי הודח", "ids": []}, {"label": "האח הגדול", "text": "המצאה", "ids": []}]
+shown_rows = bot.recap_rows("ent", rows, tv=["הישרדות - פרק הדחה!"])
+assert [r["label"] for r, _ in shown_rows] == ["הישרדות"]
+# בלי כפל: ידיעה על תוכנית שכבר בבלוק — לא מוצגת
+surv = dict(good, id="w2", source_title="Iran talks", title="כוכב הישרדות מתראיין")
+blocks = bot.topic_blocks("ent", {"ent": [surv, good], "ent_recap": rows, "ent_tv": ["הישרדות - פרק הדחה!"]})
+assert "שי חי הודח" in blocks[0] and len(blocks) == 2 and "הישרדות" not in blocks[1]
 bot.FAILURES.clear()
 
 print("ok")
