@@ -139,7 +139,7 @@ FEEDS = {
     ],
     "ent": [
         (None, gn(lang="he", topic="ENTERTAINMENT"), 15),  # מה שחם עכשיו בבידור בישראל, מדורג
-        *[(None, gn(show, "he"), 6) for show in REALITY_SHOWS],  # חיפוש נפרד לכל תוכנית
+        *[(None, gn(show, "he"), 6, show.strip('"')) for show in REALITY_SHOWS],  # חיפוש נפרד לכל תוכנית
         ("ynet בידור", "https://www.ynet.co.il/Integration/StoryRss538.xml"),
         ("וואלה סלבס", "https://rss.walla.co.il/feed/3600"),
         (None, gn("site:mako.co.il ריאליטי OR האח הגדול OR הישרדות", "he")),
@@ -257,7 +257,7 @@ def fresh(items: list, now: datetime) -> list:
             out.append(i)
     return out
 
-def read_feed(name: str | None, url: str, now: datetime, limit: int = PER_FEED) -> list:
+def read_feed(name: str | None, url: str, now: datetime, limit: int = PER_FEED, show: str = "") -> list:
     try:
         items = parse_rss(fetch(url), name)
     except Exception as ex:
@@ -265,6 +265,8 @@ def read_feed(name: str | None, url: str, now: datetime, limit: int = PER_FEED) 
         return []
     if name is None:
         items = [i for i in items if gn_ok(i["source"])]
+    if show:  # כדי שה-AI ידע לאיזו תוכנית הכתבה שייכת גם כשהכותרת לא אומרת ("שחר חסון מול אופירה אסייג")
+        items = [dict(i, show=show) for i in items]
     return fresh(items, now)[:limit]
 
 def get_feed(category: str, now: datetime) -> list:
@@ -498,6 +500,7 @@ RECAP = {
               "וגם \"he_names\": {\"<שם קבוצה באנגלית מ-results>\": \"<השם המקובל בעברית>\"} לכל קבוצה ב-results"),
     "ent": ("📺", "אמש בריאליטי",
             "כל ריאליטי שמדברים עליו ב-24 השעות האחרונות (פרק של אתמול, הדחה, דרמה, ריב עם השופטים): "
+            "found_by_search = על איזו תוכנית חיפשנו כשהכתבה נמצאה — רמז, לא ודאות. "
             "label = שם התוכנית, text = מה שהכי מדברים עליו — קודם כל מי הודח, נחשף או ניצח. "
             "תוכנית שאין עליה כתבה מה-24 שעות האחרונות — לא להזכיר. חריג אחד: אם הערב עולה פרק פתיחה של עונה חדשה של ריאליטי — "
             "שורה עם label = \"הערב\" ו-text = שם התוכנית ומה צפוי"),
@@ -541,6 +544,8 @@ def register(prefix: str, items: list, now: datetime | None = None) -> list:
     for n, i in enumerate(items, 1):
         ITEMS[f"{prefix}{n}"] = i
         entry = {"id": f"{prefix}{n}", "source": i["source"], "title": i["title"]}
+        if i.get("show"):
+            entry["found_by_search"] = i["show"]  # רמז: נמצאה בחיפוש על התוכנית הזו (עלול להיות גם רעש)
         if now:  # כדי שה-AI יעדיף את הטרי ביותר ואת מה שכולם מדברים עליו
             entry["age_hours"] = max(0, round((now - i["published"]).total_seconds() / 3600))
             if counts[n - 1] > 1:
@@ -613,7 +618,8 @@ def drop_stale(ai: dict, stale: set) -> None:
 EDITOR = """
 אתה עורך-על של בריף בוקר בעברית. קיבלת את כל הידיעות שנבחרו, לפי נושא. תקן רק ניסוח וכפילויות:
 1. אותו סיפור פעמיים — באותו נושא או בין נושאים: drop=true לכפול (השאר את הראשון). ידיעה שחוזרת על שורה
-   ב-recap או על משחק ב-fixed — drop לידיעה. שורות recap לא מוחקים בגלל כפילות.
+   ב-recap או על משחק ב-fixed — drop לידיעה. שורות recap לא מוחקים בגלל כפילות — אבל שורת recap שלא עוסקת
+   בתוכנית עצמה (רק מזכירה אותה, למשל "הוזכר בהקשר של...") — drop.
 2. מחק פתיחות כמו "YNET חשף", "הכתבה מציינת", "לפי הדיווח", זמני פרסום ("פורסם לפני X שעות") והתווית "המשמעות:".
 3. טון: בספורט ובבידור — קליל וזורם; בשאר — ענייני ומדויק.
    בספורט — drop לידיעה על הרכב, חזרה לסגל או כשירות לקראת משחק (חוץ מפציעה של כוכב גדול), drop לידיעה בלי עובדה קונקרטית (תוצאה, מספר, אירוע — לא "ממשיך להשפיע"), ולידיעת כדורסל/יורוליג/NBA
@@ -718,25 +724,41 @@ def article(e: dict, need_id: bool = True, light: bool = False) -> str:
         out += f"\n🔗 <a href=\"{esc(item['link'])}\">לקריאת הכתבה המלאה</a> · {esc(item['source'])}"
     return out
 
-def recap_block(key: str, rows: list, results: list = (), he: dict = {}) -> str:
-    icon, title, _ = RECAP[key]
-    out = [result_line(r, he) for r in results]  # תוצאות רשמיות — תמיד, ראשונות
+def recap_rows(key: str, rows: list, results: list = (), shown: set = frozenset()) -> list:
+    """השורות של ה-AI שבאמת יוצגו בבלוק: (שורה, ids)."""
+    out = []
     for r in rows or []:
         ids = [i for i in r.get("ids") or [] if i in ITEMS]
-        if any(all(n in re.findall(r"\d+", r.get("text") or "") for n in re.findall(r"\d+", x["game"])[-2:]) for x in results):
+        text = r.get("text") or ""
+        if not (r.get("label") and text and ids):
+            continue  # רק שורה שמבוססת על כתבה אמיתית
+        if any(all(n in re.findall(r"\d+", text) for n in re.findall(r"\d+", x["game"])[-2:]) for x in results):
             continue  # אותו משחק כמו תוצאה רשמית — כבר מוצג
-        if key == "sport" and not ISRAELI_HE.search(r.get("text") or ""):
+        if key == "sport" and not ISRAELI_HE.search(text):
             continue  # בספורט — רק משחקים עם קבוצה או שחקן ישראלי
-        if r.get("label") and r.get("text") and ids:  # רק שורה שמבוססת על כתבה אמיתית
-            src = ITEMS[ids[0]]
-            out.append(f'• <b>{esc(r["label"])}</b> — {esc(r["text"])} · <a href="{esc(src["link"])}">{esc(src["source"])}</a>')
+        if key != "sport" and SPORTY.search(text):
+            continue  # ספורט לא נכנס לבלוק הבידור
+        if all(ITEMS[i]["link"] in shown for i in ids):
+            continue  # כבר הוצג בנושא קודם
+        out.append((r, ids))
+    return out
+
+def recap_block(key: str, rows: list, results: list = (), he: dict = {}, shown: set = frozenset()) -> str:
+    icon, title, _ = RECAP[key]
+    out = [result_line(r, he) for r in results]  # תוצאות רשמיות — תמיד, ראשונות
+    for r, ids in recap_rows(key, rows, results, shown):
+        src = ITEMS[ids[0]]
+        out.append(f'• <b>{esc(r["label"])}</b> — {esc(r["text"])} · <a href="{esc(src["link"])}">{esc(src["source"])}</a>')
     return f"{icon} <b>{title}</b>\n" + "\n".join(out) if out else ""
 
 def topic_blocks(key: str, ai: dict, shown: set | None = None) -> list:
     """בלוק "אמש" (אם יש) + עד 5 ידיעות; כתבה שכבר בבלוק או כבר הוצגה (גם בנושא אחר) — מדלגים לבאה בתור."""
-    rows = ai.get(f"{key}_recap") or [] if key in RECAP else []
     seen = shown if shown is not None else set()
-    seen |= {ITEMS[i]["link"] for r in rows for i in r.get("ids") or [] if i in ITEMS}
+    block = ""
+    if key in RECAP:
+        rows, results = ai.get(f"{key}_recap") or [], ai.get(f"{key}_results") or []
+        block = recap_block(key, rows, results, ai.get(f"{key}_he") or {}, frozenset(seen))
+        seen |= {ITEMS[i]["link"] for _, ids in recap_rows(key, rows, results, frozenset(seen)) for i in ids}
     out = []
     for e in ai.get(key) or []:
         link = (resolve(e) or {}).get("link")
@@ -745,7 +767,6 @@ def topic_blocks(key: str, ai: dict, shown: set | None = None) -> list:
         if a := article(e, light=key in LIGHT):
             out.append(a)
             seen.add(link)
-    block = recap_block(key, rows, ai.get(f"{key}_results") or [], ai.get(f"{key}_he") or {}) if key in RECAP else ""
     return [block, *out]
 
 def render(today: datetime, market_rows: list, close_date, holdings: dict, ai: dict, channel: bool = False,

@@ -199,6 +199,14 @@ ai = {"sport": [good], "ent": [dict(good, title="האח הגדול לנבחרת 
 bot.move_sporty(ai)
 assert [e["title"] for e in ai["ent"]] == ["שיחות"] and ai["sport"][-1]["title"].startswith("האח הגדול")
 assert "<b>א</b>" in bot.article(dict(good, emoji="🇵🇹"))
+
+# 📺 שורת בלוק על כתבה שכבר הוצגה בספורט, או ספורטיבית — לא בבלוק הבידור; כתבה מתויגת בשם התוכנית
+msgs, _ = bot.render(now, [], None, {}, {"sport": [good], "ent": [iran], "ent_recap": [
+    {"label": "האח הגדול", "text": "גרסה לנבחרת ישראל", "ids": ["w2"]}, {"label": "הזמר במסכה", "text": "הודח", "ids": ["w1"]}]})
+ent = "\n".join(next(m for m in msgs if any("בידור" in b for b in m[:2])))
+assert "נבחרת" not in ent and "הזמר במסכה" not in ent  # ספורטיבי / כבר הוצג בספורט
+tagged = bot.register("t", [dict(own, title="שחר חסון מול אופירה", show="הזמר במסכה")], now)
+assert tagged[0]["found_by_search"] == "הזמר במסכה"
 bot.FAILURES.clear()
 
 print("ok")
