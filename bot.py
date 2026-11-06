@@ -659,7 +659,8 @@ def build() -> list:
             ai.update(result)
         else:
             ai[key] = result.get("items", [])
-            ai[f"{key}_recap"] = result.get("recap") or []
+            if key in RECAP:
+                ai[f"{key}_recap"] = result.get("recap") or []
     print("🧠 AI returned: " + ", ".join(f"{k}: {len(v)}" for k, v in ai.items() if isinstance(v, list)) + f", insiders: {len(insiders)}")
     public, private = render(now.astimezone(IL_TZ), market_rows, close_date, holdings, ai, channel=bool(CHANNEL_ID),
                              insiders=insiders)
