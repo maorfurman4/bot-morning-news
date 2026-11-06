@@ -161,13 +161,12 @@ bot.drop_stale(ai, bot.stale_links(ai, now))
 bot.real_date = real_date
 assert [e["title"] for e in ai["ent"]] == ["א"] and ai["ent_recap"][0]["ids"] == []
 
-# 🏟️ תוצאה רשמית: שורה בלי כתבה מותרת אם היא מבוססת על results, והתוצאה תמיד מופיעה
-res = [{"comp": "יורוליג", "game": "FC Barcelona 92-85 Hapoel IBI Tel Aviv"}]
-block = bot.recap_block("sport", [{"label": "יורוליג", "text": "ברצלונה גברה על הפועל", "result": 0},
-                                  {"label": "יורוליג", "text": "הפועל הפסידה 85:92", "result": 0},
-                                  {"label": "x", "text": "המצאה", "result": 5}], res)
-assert "ברצלונה גברה על הפועל (85:92)" in block and "הפועל הפסידה 85:92" in block and "(85:92)" not in block.split("\n")[2]
-assert "המצאה" not in block
+# 🏟️ תוצאה רשמית: תמיד ראשונה בבלוק, בקוד, עם שמות עבריים לקבוצות ישראליות; בלי דגלים באימוג'י
+res = [{"comp": "יורוליג", "game": "Hapoel IBI Tel Aviv 90-93 FC Barcelona"}]
+block = bot.recap_block("sport", [{"label": "x", "text": "המצאה", "ids": ["zz"]}], res)
+assert block == '🏟️ <b>אמש במגרשים</b>\n• <b>יורוליג</b> — הפועל ת&quot;א 90:93 FC Barcelona'
+assert bot.recap_block("sport", [], []) == ""
+assert "🇮🇱" not in bot.article(dict(good, emoji="🇮🇱"))
 
 # ✍️ עורך שני: מתקן ניסוח, מוריד כפילות; נכשל — הטקסט המקורי נשאר
 ai = {"ent": [dict(good, id="w1", bottom_line="YNET חשף: א"), dict(good, id="w2", title="כפול")],

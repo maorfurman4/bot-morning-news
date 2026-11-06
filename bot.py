@@ -354,6 +354,17 @@ ISRAELI = re.compile(r"Tel[- ]?Aviv|Jerusalem|Haifa|Be.?er[- ]?Sheva|Holon|Netan
 EUROLEAGUE = {"E": "יורוליג", "U": "יורוקאפ"}
 UEFA = {"uefa.champions": "ליגת האלופות", "uefa.europa": "הליגה האירופית", "uefa.europa.conf": "הקונפרנס ליג"}
 
+HE_CLUBS = [(r"Hapoel.*Tel Aviv", 'הפועל ת"א'), (r"Maccabi.*Tel Aviv", 'מכבי ת"א'), (r"Hapoel.*Jerusalem", "הפועל ירושלים"),
+            (r"Maccabi.*Haifa", "מכבי חיפה"), (r"Be.?er[- ]?Sheva", 'הפועל ב"ש'), (r"Hapoel.*Holon", "הפועל חולון"),
+            (r"Herzliya", "בני הרצליה"), (r"Beitar|Jerusalem", "בית\"ר ירושלים"), (r"Netanya", "מכבי נתניה")]
+
+def he_club(name: str) -> str:
+    return next((he for pat, he in HE_CLUBS if re.search(pat, name, re.I)), name)
+
+def result_line(r: dict) -> str:
+    home, a, b, away = re.match(r"(.+) (\d+)-(\d+) (.+)", r["game"]).groups()
+    return f"• <b>{esc(r['comp'])}</b> — {esc(he_club(home))} {a}:{b} {esc(he_club(away))}"
+
 def get_results(now: datetime) -> list:
     out = []
     season = now.year if now.month >= 8 else now.year - 1
@@ -467,8 +478,8 @@ WEEKEND_ENT = ("\nהיום סוף שבוע: בדרך כלל לא שודר ריא
 # בלוק קבוע בראש ההודעה: "מה קרה אמש" — רק לנושאים האלה; ריק → לא מוצג
 RECAP = {
     "sport": ("🏟️", "אמש במגרשים",
-              "results = תוצאות רשמיות של קבוצות ישראליות באירופה: לכל משחק שם — שורה, עם התוצאה בדיוק משם, "
-              "ו-result = האינדקס שלו ב-results (ids של כתבה — אם יש). בנוסף, המשחקים החשובים מאמש: קבוצות ישראליות באירופה (יורוליג, יורוקאפ, מפעלי אירופה בכדורגל), משחקי צמרת "
+              "המשחקים שב-results (תוצאות רשמיות) כבר מוצגים אוטומטית — אל תכתוב עליהם שורה ב-recap ולא ידיעה ב-items. "
+              "ב-recap — המשחקים החשובים האחרים מאמש: קבוצות ישראליות באירופה (יורוליג, יורוקאפ, מפעלי אירופה בכדורגל), משחקי צמרת "
               "בליגת העל, נבחרת ישראל; אבדיה וישראלים בחו\"ל — רק אם היה משחק מטורף או חדשה מרהיבה. "
               "label = המפעל בלבד: יורוליג / יורוקאפ / ליגת האלופות / הליגה האירופית / הקונפרנס ליג / ליגת העל / NBA / נבחרת "
               "(ישראלי בחו\"ל — לפי המפעל של הקבוצה שלו); text = שתי הקבוצות והתוצאה + חצי משפט. בלי משחקים סתמיים"),
@@ -478,7 +489,7 @@ RECAP = {
             "שורה עם label = \"הערב\" ו-text = שם התוכנית ומה צפוי"),
 }
 RECAP_FORMAT = """
-בנוסף החזר באותו JSON: "recap": [{{"label": "...", "text": "...", "ids": ["..."], "result": null}}] — {rule}.
+בנוסף החזר באותו JSON: "recap": [{{"label": "...", "text": "...", "ids": ["..."]}}] — {rule}.
 שורה קצרה לכל פריט, רק ממה שכתוב בכתבות; אם אין — רשימה ריקה. ה-items לא חוזרים על מה שב-recap.
 """
 
@@ -579,7 +590,8 @@ def drop_stale(ai: dict, stale: set) -> None:
 
 EDITOR = """
 אתה עורך-על של בריף בוקר בעברית. קיבלת את כל הידיעות שנבחרו, לפי נושא. תקן רק ניסוח וכפילויות:
-1. אותו סיפור פעמיים — באותו נושא, בין נושאים, או בין שורה ב-recap לידיעה: drop=true לכפול (השאר את הראשון).
+1. אותו סיפור פעמיים — באותו נושא או בין נושאים: drop=true לכפול (השאר את הראשון). ידיעה שחוזרת על שורה
+   ב-recap או על משחק ב-fixed — drop לידיעה. שורות recap לא מוחקים בגלל כפילות.
 2. מחק פתיחות כמו "YNET חשף", "הכתבה מציינת", "לפי הדיווח", זמני פרסום ("פורסם לפני X שעות") והתווית "המשמעות:".
 3. טון: בספורט ובבידור — קליל וזורם, משפט אחד חד; בשאר — ענייני ומדויק.
 4. אסור להוסיף עובדות, מספרים, שמות או תוצאות שלא כתובים בטקסט שקיבלת, ואסור לשנות תוצאות.
@@ -593,7 +605,8 @@ def edit_pass(ai: dict) -> None:
                            "items": [{"id": e.get("id"), "title": e.get("title"), "bottom_line": e.get("bottom_line")}
                                      for e in ai.get(k) or []],
                            "recap": [{"n": n, "label": r.get("label"), "text": r.get("text")}
-                                     for n, r in enumerate(ai.get(f"{k}_recap") or [])]} for k in TOPICS if ai.get(k)]}
+                                     for n, r in enumerate(ai.get(f"{k}_recap") or [])],
+                           "fixed": [r["game"] for r in ai.get(f"{k}_results") or []]} for k in TOPICS if ai.get(k)]}
     try:
         edited = {t.get("key") or t.get("topic"): t for t in ask_ai(EDITOR, payload).get("topics") or []}
     except Exception as ex:
@@ -674,7 +687,8 @@ def article(e: dict, need_id: bool = True, light: bool = False) -> str:
     if not e.get("title") or not e.get("bottom_line") or (not item and (need_id or e.get("id"))):
         print(f"🚫 dropped (no matching article): id={e.get('id')} source_title={e.get('source_title')!r}")
         return ""  # פריט שלא מתאים לכתבה אמיתית — לא מציגים
-    out = f"🔹 <b>{esc(e.get('emoji', ''))} {esc(e['title'])}</b>\n" + (
+    emoji = re.sub("[\U0001F1E6-\U0001F1FF]", "", e.get("emoji") or "")  # בלי דגלים
+    out = f"🔹 <b>{esc(emoji)} {esc(e['title'])}</b>\n" + (
         esc(e["bottom_line"]) if light else f"💡 <i>השורה התחתונה:</i> {esc(e['bottom_line'])}")
     if item:
         out += f"\n🔗 <a href=\"{esc(item['link'])}\">לקריאת הכתבה המלאה</a> · {esc(item['source'])}"
@@ -682,21 +696,12 @@ def article(e: dict, need_id: bool = True, light: bool = False) -> str:
 
 def recap_block(key: str, rows: list, results: list = ()) -> str:
     icon, title, _ = RECAP[key]
-    out = []
+    out = [result_line(r) for r in results]  # תוצאות רשמיות — תמיד, ראשונות
     for r in rows or []:
         ids = [i for i in r.get("ids") or [] if i in ITEMS]
-        res = results[r["result"]] if isinstance(r.get("result"), int) and 0 <= r["result"] < len(results) else None
-        if not (r.get("label") and r.get("text") and (ids or res)):
-            continue  # רק שורה שמבוססת על כתבה אמיתית או על תוצאה רשמית
-        text = r["text"]
-        if res:  # התוצאה הרשמית חייבת להופיע — אם ה-AI לא כתב אותה, מוסיפים
-            a, b = re.findall(r"(\d+)-(\d+)", res["game"])[-1]
-            if not re.search(rf"\b({a}\D{{1,3}}{b}|{b}\D{{1,3}}{a})\b", text):
-                text += f" ({b}:{a})"
-        line = f'• <b>{esc(r["label"])}</b> — {esc(text)}'
-        if ids:
-            line += f' · <a href="{esc(ITEMS[ids[0]]["link"])}">{esc(ITEMS[ids[0]]["source"])}</a>'
-        out.append(line)
+        if r.get("label") and r.get("text") and ids:  # רק שורה שמבוססת על כתבה אמיתית
+            src = ITEMS[ids[0]]
+            out.append(f'• <b>{esc(r["label"])}</b> — {esc(r["text"])} · <a href="{esc(src["link"])}">{esc(src["source"])}</a>')
     return f"{icon} <b>{title}</b>\n" + "\n".join(out) if out else ""
 
 def topic_blocks(key: str, ai: dict) -> list:
@@ -711,7 +716,8 @@ def topic_blocks(key: str, ai: dict) -> list:
         if a := article(e, light=key in LIGHT):
             out.append(a)
             seen.add(link)
-    return [recap_block(key, rows, ai.get(f"{key}_results") or []) if key in RECAP else "", *out]
+    block = recap_block(key, rows, ai.get(f"{key}_results") or []) if key in RECAP else ""
+    return [block, *out]
 
 def render(today: datetime, market_rows: list, close_date, holdings: dict, ai: dict, channel: bool = False,
            insiders: list = ()) -> tuple:
