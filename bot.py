@@ -243,9 +243,9 @@ def trusted(source: str) -> bool:
     return any(re.search(rf"\b{re.escape(t)}\b", s) for t in TRUSTED)
 
 def gn_ok(source: str) -> bool:
-    # Google News קורא את התאריך של מעריב הפוך (11/06 = 11 ביוני ← "6 בנובמבר"), אז כתבות ישנות נראות טריות
-    # (נמצא 06/11/2026). מעריב נכנס רק מה-RSS שלו, שהתאריכים בו נכונים
-    return trusted(source) and not re.search(r"מעריב|maariv", source, re.I)
+    # Google News קורא את התאריך של מעריב הפוך (11/06 = 11 ביוני ← "6 בנובמבר"); לא חוסמים את מעריב —
+    # stale_links בודק את התאריך שכתוב בכתבה עצמה ופוסל כתבה ישנה (06/11/2026)
+    return trusted(source)
 
 def fresh(items: list, now: datetime) -> list:
     """רק מהיממה האחרונה, בלי כפילויות; שומר על סדר המקור (Google News מדרג לפי חשיבות)."""

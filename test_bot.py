@@ -22,7 +22,7 @@ kept = bot.fresh([i for i in items if bot.trusted(i["source"])], now)
 assert [i["link"] for i in kept] == ["https://x/1", "https://x/4"]
 assert not bot.trusted("James Martin Center for Nonproliferation Studies")
 assert bot.trusted("Bloomberg.com") and bot.trusted("גלובס") and bot.trusted("The Times of Israel")
-assert bot.gn_ok("YNET") and not bot.gn_ok("מעריב") and not bot.gn_ok("Maariv")  # תאריכים הפוכים ב-Google News
+assert bot.gn_ok("YNET") and bot.gn_ok("מעריב")  # מעריב חוזר — התאריך שלו נבדק בכתבה עצמה (stale_links)
 
 # Atom (The Verge)
 ATOM = b"""<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>New robot</title>
