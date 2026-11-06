@@ -166,6 +166,8 @@ res = [{"comp": "יורוליג", "game": "Hapoel IBI Tel Aviv 90-93 FC Barcelon
 block = bot.recap_block("sport", [{"label": "x", "text": "המצאה", "ids": ["zz"]}], res)
 assert block == '🏟️ <b>אמש במגרשים</b>\n• <b>יורוליג</b> — הפועל ת&quot;א 90:93 FC Barcelona'
 assert bot.recap_block("sport", [], []) == ""
+dup = bot.recap_block("sport", [{"label": "יורוליג", "text": "Hapoel 90-93 Barcelona — הפסד שני", "ids": ["w1"]}], res)
+assert dup.count("•") == 1  # השורה של ה-AI על אותו משחק לא מוצגת
 assert "🇮🇱" not in bot.article(dict(good, emoji="🇮🇱"))
 
 # ✍️ עורך שני: מתקן ניסוח, מוריד כפילות; נכשל — הטקסט המקורי נשאר

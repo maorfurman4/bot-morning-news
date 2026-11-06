@@ -699,6 +699,8 @@ def recap_block(key: str, rows: list, results: list = ()) -> str:
     out = [result_line(r) for r in results]  # תוצאות רשמיות — תמיד, ראשונות
     for r in rows or []:
         ids = [i for i in r.get("ids") or [] if i in ITEMS]
+        if any(all(n in re.findall(r"\d+", r.get("text") or "") for n in re.findall(r"\d+", x["game"])[-2:]) for x in results):
+            continue  # אותו משחק כמו תוצאה רשמית — כבר מוצג
         if r.get("label") and r.get("text") and ids:  # רק שורה שמבוססת על כתבה אמיתית
             src = ITEMS[ids[0]]
             out.append(f'• <b>{esc(r["label"])}</b> — {esc(r["text"])} · <a href="{esc(src["link"])}">{esc(src["source"])}</a>')
