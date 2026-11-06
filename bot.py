@@ -405,7 +405,7 @@ TOPIC_FORMAT = """
 לעולם לא למלא בידיעות מנושא אחר (או ברכילות, חוץ מבנושא הבידור).
 
 החזר JSON בלבד:
-{"items": [{"id": "...", "source_title": "...", "emoji": "אימוג'י אחד שמתאים לידיעה הספציפית", "title": "...", "bottom_line": "..."}]}
+{"items": [{"id": "...", "source_title": "...", "emoji": "אימוג'י אחד שמתאים לידיעה הספציפית, לא דגל", "title": "...", "bottom_line": "..."}]}
 """
 
 MARKET_FORMAT = """
@@ -453,11 +453,16 @@ def ask_ai(system: str, payload: dict) -> dict:
             ],
         }
         body.update({"reasoning_effort": "low"} if model.startswith("gpt-5") else {"temperature": 0.2})
-        resp = requests.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"},
-            json=body, timeout=300,
-        )
+        try:
+            resp = requests.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"},
+                json=body, timeout=300,
+            )
+        except requests.RequestException as ex:  # חיבור שנפל — כמו כל תקלה: עוברים למודל הבא
+            last_error = f"{model}: {type(ex).__name__}"
+            print(f"⚠️ {last_error} — trying next model")
+            continue
         if resp.ok:
             return json.loads(resp.json()["choices"][0]["message"]["content"])
         last_error = f"{model}: {resp.status_code} {resp.text[:150]}"

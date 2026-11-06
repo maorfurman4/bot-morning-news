@@ -112,6 +112,21 @@ assert [i["ticker"] for i in ins] == ["BBB", "AAA"] and ins[1]["company"] == "Al
 assert bot.fmt_insider(ins[0]).endswith('— דירקטור קנה ב-<b>$1.5M</b>, במחיר $10.00')
 pub, _ = bot.render(now, ["🟢 a"], None, {}, {}, channel=True, insiders=ins)
 assert "🕵️ <b>רכישות פנים</b>" in "\n".join(sum(pub, []))
+
+# חיבור שנפל מול OpenAI → עוברים למודל הבא במקום לאבד נושא שלם (קרה 06/11/2026)
+class Ok:
+    ok = True
+    def json(self):
+        return {"choices": [{"message": {"content": '{"items": []}'}}]}
+tries = [bot.requests.ConnectionError("dropped"), Ok()]
+def fake_post(*a, **k):
+    r = tries.pop(0)
+    if isinstance(r, Exception):
+        raise r
+    return r
+real_post, bot.requests.post = bot.requests.post, fake_post
+assert bot.ask_ai("s", {}) == {"items": []} and not tries
+bot.requests.post = real_post
 bot.FAILURES.clear()
 
 print("ok")
