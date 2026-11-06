@@ -349,13 +349,13 @@ def fmt_insider(i: dict) -> str:
 
 # תוצאות רשמיות של קבוצות ישראליות באירופה — כדי שהתוצאה בבלוק "אמש במגרשים" תהיה מדויקת
 # (ליגת העל — אין מקור חינמי; שם התוצאה מגיעה מהכתבה)
-ISRAELI = re.compile(r"Tel[- ]?Aviv|Jerusalem|Haifa|Be.?er[- ]?Sheva|Holon|Netanya|Herzliya|Ashdod|Petah|Ness Ziona|"
+ISRAELI = re.compile(r"Hapoel|Maccabi|Beitar|Bnei |Tel[- ]?Aviv|Jerusalem|Haifa|Be.?er|Holon|Netanya|Herzliya|Ashdod|Petah|Ness Ziona|"
                      r"Galil|Ramat Gan|Rishon|Kiryat", re.I)
 EUROLEAGUE = {"E": "יורוליג", "U": "יורוקאפ"}
 UEFA = {"uefa.champions": "ליגת האלופות", "uefa.europa": "הליגה האירופית", "uefa.europa.conf": "הקונפרנס ליג"}
 
 HE_CLUBS = [(r"Hapoel.*Tel Aviv", 'הפועל ת"א'), (r"Maccabi.*Tel Aviv", 'מכבי ת"א'), (r"Hapoel.*Jerusalem", "הפועל ירושלים"),
-            (r"Maccabi.*Haifa", "מכבי חיפה"), (r"Be.?er[- ]?Sheva", 'הפועל ב"ש'), (r"Hapoel.*Holon", "הפועל חולון"),
+            (r"Maccabi.*Haifa", "מכבי חיפה"), (r"Be.?er", 'הפועל ב"ש'), (r"Hapoel.*Holon", "הפועל חולון"),
             (r"Herzliya", "בני הרצליה"), (r"Beitar|Jerusalem", "בית\"ר ירושלים"), (r"Netanya", "מכבי נתניה")]
 
 ISRAELI_HE = re.compile(r'הפועל|מכבי|בית"ר|בית״ר|בני |עירוני|ישראל|אבדיה|נבחרת')

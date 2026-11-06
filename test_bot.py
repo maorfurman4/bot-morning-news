@@ -166,6 +166,7 @@ res = [{"comp": "יורוליג", "game": "Hapoel IBI Tel Aviv 90-93 FC Barcelon
 block = bot.recap_block("sport", [{"label": "x", "text": "המצאה", "ids": ["zz"]}], res)
 assert block == '🏟️ <b>אמש במגרשים</b>\n• <b>יורוליג</b> — הפועל ת&quot;א 90, FC Barcelona 93'
 assert bot.recap_block("sport", [], res, {"FC Barcelona": "ברצלונה"}).endswith("הפועל ת&quot;א 90, ברצלונה 93")
+assert bot.ISRAELI.search("OFI Crete Hapoel Be'er") and bot.he_club("Hapoel Be'er") == 'הפועל ב"ש'  # השם ב-ESPN
 # בספורט — רק שורות עם ישראלים
 only_il = bot.recap_block("sport", [{"label": "יורוליג", "text": "ולנסיה גברה על מילאנו", "ids": ["w1"]},
                                     {"label": "ליגת העל", "text": "מכבי חיפה 2, בית\"ר 1", "ids": ["w1"]}])
