@@ -65,7 +65,7 @@ assert len(parts) == 2 and all(len(p) <= 3900 for p in parts)
 assert all(line.startswith(bot.RLM) for line in parts[1].split("\n") if line)
 
 # הודעה נפרדת לכל נושא; נושא בלי כתבות לא נשלח; הפתיח רק בהודעה הראשונה
-msgs, _ = bot.render(now, [], None, {}, {"israel": [good], "ai": [dict(good, source_title="x")], "world": [good]})
+msgs, _ = bot.render(now, [], None, {}, {"israel": [good], "ai": [dict(good, source_title="x")], "world": [dict(good, id="w2", source_title="Iran talks")]})
 assert len(msgs) == 2 and msgs[0][1].startswith("🇮🇱") and msgs[1][0].startswith("🌍")
 assert msgs[0][0].startswith("🌅")
 
@@ -142,7 +142,7 @@ assert not any("🏟️" in b for b in sum(msgs, []))
 
 # ידיעה על כתבה שכבר בבלוק "אמש" לא חוזרת — עוברים לבאה בתור; ספורט/בידור בפורמט קליל
 iran = dict(good, id="w2", source_title="Iran talks", title="שיחות")
-blocks = bot.topic_blocks("sport", {"sport": [good, iran], "sport_recap": [{"label": "יורוליג", "text": "x", "ids": ["w1"]}]})
+blocks = bot.topic_blocks("sport", {"sport": [good, iran], "sport_recap": [{"label": "יורוליג", "text": "מכבי ניצחה", "ids": ["w1"]}]})
 assert blocks[0].startswith("🏟️") and len(blocks) == 2 and "שיחות" in blocks[1] and "השורה התחתונה" not in blocks[1]
 assert "השורה התחתונה" in bot.topic_blocks("israel", {"israel": [good]})[1]
 assert len(bot.topic_blocks("world", {"world": [good] * 9})) == 2  # אותה כתבה פעמיים — פעם אחת
@@ -164,7 +164,16 @@ assert [e["title"] for e in ai["ent"]] == ["א"] and ai["ent_recap"][0]["ids"] =
 # 🏟️ תוצאה רשמית: תמיד ראשונה בבלוק, בקוד, עם שמות עבריים לקבוצות ישראליות; בלי דגלים באימוג'י
 res = [{"comp": "יורוליג", "game": "Hapoel IBI Tel Aviv 90-93 FC Barcelona"}]
 block = bot.recap_block("sport", [{"label": "x", "text": "המצאה", "ids": ["zz"]}], res)
-assert block == '🏟️ <b>אמש במגרשים</b>\n• <b>יורוליג</b> — הפועל ת&quot;א 90:93 FC Barcelona'
+assert block == '🏟️ <b>אמש במגרשים</b>\n• <b>יורוליג</b> — הפועל ת&quot;א 90, FC Barcelona 93'
+assert bot.recap_block("sport", [], res, {"FC Barcelona": "ברצלונה"}).endswith("הפועל ת&quot;א 90, ברצלונה 93")
+# בספורט — רק שורות עם ישראלים
+only_il = bot.recap_block("sport", [{"label": "יורוליג", "text": "ולנסיה גברה על מילאנו", "ids": ["w1"]},
+                                    {"label": "ליגת העל", "text": "מכבי חיפה 2, בית\"ר 1", "ids": ["w1"]}])
+assert "ולנסיה" not in only_il and "מכבי חיפה" in only_il
+# אותה כתבה לא מופיעה בשני נושאים — נשארת בראשון (ספורט לפני בידור)
+msgs, _ = bot.render(now, [], None, {}, {"sport": [good], "ent": [good, iran]})
+ent = next(m for m in msgs if any("בידור" in b for b in m[:2]))
+assert sum(b.startswith("🔹") for b in ent) == 1 and "שיחות" in "\n".join(ent)
 assert bot.recap_block("sport", [], []) == ""
 dup = bot.recap_block("sport", [{"label": "יורוליג", "text": "Hapoel 90-93 Barcelona — הפסד שני", "ids": ["w1"]}], res)
 assert dup.count("•") == 1  # השורה של ה-AI על אותו משחק לא מוצגת

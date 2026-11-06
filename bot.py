@@ -358,12 +358,16 @@ HE_CLUBS = [(r"Hapoel.*Tel Aviv", 'הפועל ת"א'), (r"Maccabi.*Tel Aviv", '�
             (r"Maccabi.*Haifa", "מכבי חיפה"), (r"Be.?er[- ]?Sheva", 'הפועל ב"ש'), (r"Hapoel.*Holon", "הפועל חולון"),
             (r"Herzliya", "בני הרצליה"), (r"Beitar|Jerusalem", "בית\"ר ירושלים"), (r"Netanya", "מכבי נתניה")]
 
+ISRAELI_HE = re.compile(r'הפועל|מכבי|בית"ר|בית״ר|בני |עירוני|ישראל|אבדיה|נבחרת')
+
 def he_club(name: str) -> str:
     return next((he for pat, he in HE_CLUBS if re.search(pat, name, re.I)), name)
 
-def result_line(r: dict) -> str:
+def result_line(r: dict, he: dict = {}) -> str:
     home, a, b, away = re.match(r"(.+) (\d+)-(\d+) (.+)", r["game"]).groups()
-    return f"• <b>{esc(r['comp'])}</b> — {esc(he_club(home))} {a}:{b} {esc(he_club(away))}"
+    name = lambda n: he_club(n) if he_club(n) != n else he.get(n, n)
+    # "הפועל ת\"א 90, ברצלונה 93" — בלי "90:93" שמתהפך בעברית ולא ברור של מי כל מספר
+    return f"• <b>{esc(r['comp'])}</b> — {esc(name(home))} {a}, {esc(name(away))} {b}"
 
 def get_results(now: datetime) -> list:
     out = []
@@ -428,19 +432,23 @@ TOPICS = {
               "אקטואליה עולמית: גאופוליטיקה, מלחמות, בחירות, אסונות, כלכלה עולמית. בלי ישראל — יש לה הודעה נפרדת."),
     "sport": ("⚽", "ספורט",
               "ספורט — רק מה שבאמת מעניין, לא רשימת תוצאות. עדיפות: (1) ישראלים בחו\"ל, תמיד להבליט — דני אבדיה ו-NBA, "
-              "שחקנים ישראלים באירופה; (2) ספורטאים ישראלים בתחרויות בינלאומיות (ג'ודו, אולימפיאדה, אליפויות עולם/אירופה) — "
+              "שחקנים ישראלים באירופה — אבל רק כשיש אירוע קונקרטי (משחק עם מספרים, שיא, פציעה, טרייד), "
+              "לא כתבת דעה כללית; (2) ספורטאים ישראלים בתחרויות בינלאומיות (ג'ודו, אולימפיאדה, אליפויות עולם/אירופה) — "
               "מדליה או הישג תמיד נכנסים; (3) כדורגל וכדורסל ישראלי ויורוליג — רק סיפורים מעניינים או משחקים חשובים, "
               "ואז עם התוצאה; (4) NBA ו-כדורגל עולמי — רק על הכוכבים הגדולים באמת (רונאלדו, מסי, לברון וכו') או אירועים "
               "גדולים. אסור: קבוצות חלשות, מאבקי תחתית/ירידה, הרכבים צפויים, שחקנים שוליים, תוצאות סתמיות — גם אם חסרות ידיעות. כמה כתבות על אותו שחקן או קבוצה — "
               "ידיעה אחת. תוצאות ומספרים — רק כמו שכתוב בכתבה. "
               "טון קליל וזורם, כמו מוסף ספורט — כותרות עם חיוך ופאנץ', אבל העובדות מדויקות. "
-              "bottom_line: משפט אחד חד וקליל (עד 25 מילים) עם העובדה המרכזית — בלי \"המשמעות\" ובלי ניתוח."),
+              "bottom_line: משפט או שניים קלילים (עד 40 מילים) עם העובדה המרכזית ופרט קונקרטי — מספר, שם, או מה הלאה. "
+              "בלי \"המשמעות\" ובלי ניתוח."),
     "ent": ("🎬", "בידור וריאליטי",
+            "סיפור על ספורטאים, קבוצות או הנבחרת — שייך לספורט ולא לכאן, גם אם יש בו מילה כמו \"האח הגדול\". "
             "בידור, סלבס וריאליטי, בעיקר ישראלי: כל ריאליטי ישראלי שרץ עכשיו (הדחות, דרמות, זוכים), סלבס ישראלים — "
             "ומהעולם רק הכי גדולים. רכילות מותרת בלי פילטרים (פרידות, קשרים, סקנדלים) — אבל רק עובדות שכתובות בכתבה, "
             "בלי להמציא. מדי פעם, כשיוצאת סדרה או סרט גדולים או מוערכים מאוד — גם זה. "
             "טון קליל וזורם, כמו מוסף סוף שבוע — כותרות עם חיוך ופאנץ'. "
-            "bottom_line: משפט אחד חד וקליל (עד 25 מילים) עם העובדה המרכזית — בלי \"המשמעות\" ובלי ניתוח."),
+            "bottom_line: משפט או שניים קלילים (עד 40 מילים) עם העובדה המרכזית ופרט קונקרטי — מספר, שם, או מה הלאה. "
+              "בלי \"המשמעות\" ובלי ניתוח."),
 }
 
 RULES = """
@@ -482,7 +490,9 @@ RECAP = {
               "ב-recap — המשחקים החשובים האחרים מאמש: קבוצות ישראליות באירופה (יורוליג, יורוקאפ, מפעלי אירופה בכדורגל), משחקי צמרת "
               "בליגת העל, נבחרת ישראל; אבדיה וישראלים בחו\"ל — רק אם היה משחק מטורף או חדשה מרהיבה. "
               "label = המפעל בלבד: יורוליג / יורוקאפ / ליגת האלופות / הליגה האירופית / הקונפרנס ליג / ליגת העל / NBA / נבחרת "
-              "(ישראלי בחו\"ל — לפי המפעל של הקבוצה שלו); text = שתי הקבוצות והתוצאה + חצי משפט. בלי משחקים סתמיים"),
+              "(ישראלי בחו\"ל — לפי המפעל של הקבוצה שלו); text = בעברית, כל קבוצה עם התוצאה שלה (\"מכבי ת\"א 2, הפועל ב\"ש 1\") "
+              "+ חצי משפט. רק משחקים עם קבוצה או שחקן ישראלי. בלי משחקים סתמיים. "
+              "וגם \"he_names\": {\"<שם קבוצה באנגלית מ-results>\": \"<השם המקובל בעברית>\"} לכל קבוצה ב-results"),
     "ent": ("📺", "אמש בריאליטי",
             "כל ריאליטי ששודר אמש או בלילה: label = שם התוכנית, text = מה שהכי מדברים עליו — קודם כל מי הודח, "
             "נחשף או ניצח. תוכנית שלא שודרה — לא להזכיר. חריג אחד: אם הערב עולה פרק פתיחה של עונה חדשה של ריאליטי — "
@@ -694,22 +704,25 @@ def article(e: dict, need_id: bool = True, light: bool = False) -> str:
         out += f"\n🔗 <a href=\"{esc(item['link'])}\">לקריאת הכתבה המלאה</a> · {esc(item['source'])}"
     return out
 
-def recap_block(key: str, rows: list, results: list = ()) -> str:
+def recap_block(key: str, rows: list, results: list = (), he: dict = {}) -> str:
     icon, title, _ = RECAP[key]
-    out = [result_line(r) for r in results]  # תוצאות רשמיות — תמיד, ראשונות
+    out = [result_line(r, he) for r in results]  # תוצאות רשמיות — תמיד, ראשונות
     for r in rows or []:
         ids = [i for i in r.get("ids") or [] if i in ITEMS]
         if any(all(n in re.findall(r"\d+", r.get("text") or "") for n in re.findall(r"\d+", x["game"])[-2:]) for x in results):
             continue  # אותו משחק כמו תוצאה רשמית — כבר מוצג
+        if key == "sport" and not ISRAELI_HE.search(r.get("text") or ""):
+            continue  # בספורט — רק משחקים עם קבוצה או שחקן ישראלי
         if r.get("label") and r.get("text") and ids:  # רק שורה שמבוססת על כתבה אמיתית
             src = ITEMS[ids[0]]
             out.append(f'• <b>{esc(r["label"])}</b> — {esc(r["text"])} · <a href="{esc(src["link"])}">{esc(src["source"])}</a>')
     return f"{icon} <b>{title}</b>\n" + "\n".join(out) if out else ""
 
-def topic_blocks(key: str, ai: dict) -> list:
-    """בלוק "אמש" (אם יש) + עד 5 ידיעות; ידיעה על כתבה שכבר בבלוק או כבר הוצגה — מדלגים לבאה בתור."""
+def topic_blocks(key: str, ai: dict, shown: set | None = None) -> list:
+    """בלוק "אמש" (אם יש) + עד 5 ידיעות; כתבה שכבר בבלוק או כבר הוצגה (גם בנושא אחר) — מדלגים לבאה בתור."""
     rows = ai.get(f"{key}_recap") or [] if key in RECAP else []
-    seen = {ITEMS[i]["link"] for r in rows for i in r.get("ids") or [] if i in ITEMS}
+    seen = shown if shown is not None else set()
+    seen |= {ITEMS[i]["link"] for r in rows for i in r.get("ids") or [] if i in ITEMS}
     out = []
     for e in ai.get(key) or []:
         link = (resolve(e) or {}).get("link")
@@ -718,7 +731,7 @@ def topic_blocks(key: str, ai: dict) -> list:
         if a := article(e, light=key in LIGHT):
             out.append(a)
             seen.add(link)
-    block = recap_block(key, rows, ai.get(f"{key}_results") or []) if key in RECAP else ""
+    block = recap_block(key, rows, ai.get(f"{key}_results") or [], ai.get(f"{key}_he") or {}) if key in RECAP else ""
     return [block, *out]
 
 def render(today: datetime, market_rows: list, close_date, holdings: dict, ai: dict, channel: bool = False,
@@ -757,7 +770,8 @@ def render(today: datetime, market_rows: list, close_date, holdings: dict, ai: d
     ]
 
     date = f"<i>{today:%d/%m/%Y}</i>"
-    public = [(f"{icon} <b>{name}</b> · {date}", topic_blocks(key, ai)) for key, (icon, name, _) in TOPICS.items()]
+    shown = set()  # כתבה שהוצגה בנושא אחד לא חוזרת בנושא אחר
+    public = [(f"{icon} <b>{name}</b> · {date}", topic_blocks(key, ai, shown)) for key, (icon, name, _) in TOPICS.items()]
     public.append((f"📈 <b>שוק ההון</b> · {date}", market))
     private = [
         (f"💼 <b>המניות שלך</b> · {date}", mine if holdings else []),
@@ -848,6 +862,7 @@ def build() -> list:
             ai[key] = result.get("items", [])
             if key in RECAP:
                 ai[f"{key}_recap"] = result.get("recap") or []
+                ai[f"{key}_he"] = result.get("he_names") if isinstance(result.get("he_names"), dict) else {}
     ai["sport_results"] = results
     drop_stale(ai, stale_links(ai, now))
     edit_pass(ai)
