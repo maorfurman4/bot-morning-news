@@ -6,6 +6,11 @@ on:
   schedule:
     - cron: '30 1 * * *'
   workflow_dispatch: # מאפשר לך להריץ ידנית בלחיצת כפתור
+    inputs:
+      dry_run:
+        description: "תצוגה מקדימה — מדפיס ללוג, לא שולח לטלגרם"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -50,4 +55,4 @@ jobs:
         TELEGRAM_TOKEN_NEWS: ${{ secrets.TELEGRAM_TOKEN_NEWS }}
         CHAT_ID_NEWS: ${{ secrets.CHAT_ID_NEWS }}
         NEWS_CHANNEL_ID: ${{ secrets.NEWS_CHANNEL_ID }}
-      run: python bot.py
+      run: python bot.py ${{ inputs.dry_run && '--dry-run' || '' }}
