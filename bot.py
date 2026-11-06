@@ -436,7 +436,7 @@ TOPICS = {
               "לא כתבת דעה כללית; (2) ספורטאים ישראלים בתחרויות בינלאומיות (ג'ודו, אולימפיאדה, אליפויות עולם/אירופה) — "
               "מדליה או הישג תמיד נכנסים; (3) כדורגל וכדורסל ישראלי ויורוליג — רק סיפורים מעניינים או משחקים חשובים, "
               "ואז עם התוצאה; (4) NBA ו-כדורגל עולמי — רק על הכוכבים הגדולים באמת (רונאלדו, מסי, לברון וכו') או אירועים "
-              "גדולים. אסור: קבוצות חלשות, מאבקי תחתית/ירידה, הרכבים צפויים, שחקנים שוליים, תוצאות סתמיות — גם אם חסרות ידיעות. כמה כתבות על אותו שחקן או קבוצה — "
+              "גדולים. יורוליג, NBA וכדורסל בכלל — רק כשיש קשר לישראלים (קבוצה ישראלית, שחקן ישראלי). אסור: קבוצות חלשות, מאבקי תחתית/ירידה, הרכבים צפויים, שחקנים שוליים, תוצאות סתמיות — גם אם חסרות ידיעות. כמה כתבות על אותו שחקן או קבוצה — "
               "ידיעה אחת. תוצאות ומספרים — רק כמו שכתוב בכתבה. "
               "טון קליל וזורם, כמו מוסף ספורט — כותרות עם חיוך ופאנץ', אבל העובדות מדויקות. "
               "bottom_line: משפט או שניים קלילים (עד 40 מילים) עם העובדה המרכזית ופרט קונקרטי — מספר, שם, או מה הלאה. "
@@ -592,6 +592,14 @@ def stale_links(ai: dict, now: datetime) -> set:
     print(f"🗓️ real dates: {sum(d is not None for d in dates.values())}/{len(picked)} checked, {len(stale)} stale")
     return stale
 
+SPORTY = re.compile(r"נבחרת|כדורגל|כדורסל|ספורטאי|שחקני ה")
+
+def move_sporty(ai: dict) -> None:
+    """ידיעה על ספורט שה-AI שם בבידור — עוברת לסוף רשימת הספורט (ה-AI לא תמיד מקשיב לכלל)."""
+    sporty = [e for e in ai.get("ent") or [] if SPORTY.search(f"{e.get('title')} {e.get('bottom_line')}")]
+    ai["ent"] = [e for e in ai.get("ent") or [] if e not in sporty]
+    ai["sport"] = (ai.get("sport") or []) + sporty
+
 def drop_stale(ai: dict, stale: set) -> None:
     for k in TOPICS:
         ai[k] = [e for e in ai.get(k) or [] if (resolve(e) or {}).get("link") not in stale]
@@ -603,7 +611,9 @@ EDITOR = """
 1. אותו סיפור פעמיים — באותו נושא או בין נושאים: drop=true לכפול (השאר את הראשון). ידיעה שחוזרת על שורה
    ב-recap או על משחק ב-fixed — drop לידיעה. שורות recap לא מוחקים בגלל כפילות.
 2. מחק פתיחות כמו "YNET חשף", "הכתבה מציינת", "לפי הדיווח", זמני פרסום ("פורסם לפני X שעות") והתווית "המשמעות:".
-3. טון: בספורט ובבידור — קליל וזורם, משפט אחד חד; בשאר — ענייני ומדויק.
+3. טון: בספורט ובבידור — קליל וזורם; בשאר — ענייני ומדויק.
+   בספורט — drop לידיעה בלי עובדה קונקרטית (תוצאה, מספר, אירוע — לא "ממשיך להשפיע"), ולידיעת כדורסל/יורוליג/NBA
+   בלי קשר לקבוצה או שחקן ישראלי.
 4. אסור להוסיף עובדות, מספרים, שמות או תוצאות שלא כתובים בטקסט שקיבלת, ואסור לשנות תוצאות.
 החזר JSON בלבד, באותו מבנה: {"topics": [{"topic": "...", "items": [{"id": "...", "title": "...", "bottom_line": "...",
 "drop": false}], "recap": [{"n": 0, "text": "...", "drop": false}]}]}
@@ -698,7 +708,7 @@ def article(e: dict, need_id: bool = True, light: bool = False) -> str:
         print(f"🚫 dropped (no matching article): id={e.get('id')} source_title={e.get('source_title')!r}")
         return ""  # פריט שלא מתאים לכתבה אמיתית — לא מציגים
     emoji = re.sub("[\U0001F1E6-\U0001F1FF]", "", e.get("emoji") or "")  # בלי דגלים
-    out = f"🔹 <b>{esc(emoji)} {esc(e['title'])}</b>\n" + (
+    out = f"🔹 <b>{esc(emoji) + ' ' if emoji.strip() else ''}{esc(e['title'])}</b>\n" + (
         esc(e["bottom_line"]) if light else f"💡 <i>השורה התחתונה:</i> {esc(e['bottom_line'])}")
     if item:
         out += f"\n🔗 <a href=\"{esc(item['link'])}\">לקריאת הכתבה המלאה</a> · {esc(item['source'])}"
@@ -865,6 +875,7 @@ def build() -> list:
                 ai[f"{key}_he"] = result.get("he_names") if isinstance(result.get("he_names"), dict) else {}
     ai["sport_results"] = results
     drop_stale(ai, stale_links(ai, now))
+    move_sporty(ai)
     edit_pass(ai)
     print("🧠 AI returned: " + ", ".join(f"{k}: {len(v)}" for k, v in ai.items() if isinstance(v, list)) + f", insiders: {len(insiders)}")
     public, private = render(now.astimezone(IL_TZ), market_rows, close_date, holdings, ai, channel=bool(CHANNEL_ID),

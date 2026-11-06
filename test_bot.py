@@ -192,6 +192,12 @@ bot.ask_ai = boom
 bot.edit_pass(ai)
 assert ai["ent"][0]["bottom_line"] == "א נקי" and bot.FAILURES[-1].startswith("• <b>עורך")
 bot.ask_ai = real_ask
+
+# ⚽ ידיעה ספורטיבית בבידור עוברת לספורט; אימוג'י דגל שנמחק לא משאיר רווח
+ai = {"sport": [good], "ent": [dict(good, title="האח הגדול לנבחרת ישראל בכדורגל"), iran]}
+bot.move_sporty(ai)
+assert [e["title"] for e in ai["ent"]] == ["שיחות"] and ai["sport"][-1]["title"].startswith("האח הגדול")
+assert "<b>א</b>" in bot.article(dict(good, emoji="🇵🇹"))
 bot.FAILURES.clear()
 
 print("ok")
