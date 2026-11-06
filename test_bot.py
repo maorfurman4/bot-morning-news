@@ -93,7 +93,8 @@ pub, _ = bot.render(now, [], None, {}, dup_ai, channel=True)
 text = "\n".join(sum(pub, []))
 assert "כפול" not in text and text.count('href="https://x/1"') == 1 and "📚" in text  # מקור פעם אחת, בשורת המקורות
 # 5 ידיעות לכל היותר בנושא; טבלת השוק בלי תווי כיוון בתוכה
-msgs, _ = bot.render(now, ["🟢 a", "🔴 b"], None, {}, {"world": [dict(good, title=str(n)) for n in range(8)]})
+eight = bot.register("v", [dict(own, title=f"story {n}", link=f"https://v/{n}") for n in range(8)])
+msgs, _ = bot.render(now, ["🟢 a", "🔴 b"], None, {}, {"world": [dict(good, id=e["id"], source_title=e["title"]) for e in eight]})
 assert sum(b.startswith("🔹") for b in msgs[0]) == 5
 table = bot.chunks(next(m for m in bot.render(now, ["🟢 a", "🔴 b"], None, {}, {})[0]))[0]
 assert "\n🔴 b</pre>" in table
@@ -138,6 +139,49 @@ assert any(b.startswith("📺 <b>אמש בריאליטי</b>\n• <b>האח הג
 assert "המצאה" not in "\n".join(ent)
 msgs, _ = bot.render(now, [], None, {}, {"sport": [good], "sport_recap": []})
 assert not any("🏟️" in b for b in sum(msgs, []))
+
+# ידיעה על כתבה שכבר בבלוק "אמש" לא חוזרת — עוברים לבאה בתור; ספורט/בידור בפורמט קליל
+iran = dict(good, id="w2", source_title="Iran talks", title="שיחות")
+blocks = bot.topic_blocks("sport", {"sport": [good, iran], "sport_recap": [{"label": "יורוליג", "text": "x", "ids": ["w1"]}]})
+assert blocks[0].startswith("🏟️") and len(blocks) == 2 and "שיחות" in blocks[1] and "השורה התחתונה" not in blocks[1]
+assert "השורה התחתונה" in bot.topic_blocks("israel", {"israel": [good]})[1]
+assert len(bot.topic_blocks("world", {"world": [good] * 9})) == 2  # אותה כתבה פעמיים — פעם אחת
+
+# כמה מקורות מספרים את אותו סיפור
+same = [{"title": "ענבל אלדן הודחה מהאח הגדול", "source": "YNET"}, {"title": "דיירת האח הגדול ענבל אלדן הודחה", "source": "mako"},
+        {"title": "מכבי ניצחה את הפועל", "source": "YNET"}]
+assert bot.coverage(same) == [2, 2, 1]
+# 🗓️ כתבה שה-AI בחר והתאריך שבה ישן — נזרקת (גם מבלוק "אמש"); אי אפשר לדעת — נשארת
+assert bot.real_url("https://www.ynet.co.il/a") == "https://www.ynet.co.il/a"
+old_story = dict(own, title="June story", link="https://news.google.com/rss/articles/OLD")
+reg = bot.register("q", [old_story])
+ai = {"ent": [dict(good, id=reg[0]["id"], source_title="June story"), good], "ent_recap": [{"label": "x", "text": "y", "ids": [reg[0]["id"]]}]}
+real_date, bot.real_date = bot.real_date, lambda link: now - bot.timedelta(days=148) if "OLD" in link else None
+bot.drop_stale(ai, bot.stale_links(ai, now))
+bot.real_date = real_date
+assert [e["title"] for e in ai["ent"]] == ["א"] and ai["ent_recap"][0]["ids"] == []
+
+# 🏟️ תוצאה רשמית: שורה בלי כתבה מותרת אם היא מבוססת על results, והתוצאה תמיד מופיעה
+res = [{"comp": "יורוליג", "game": "FC Barcelona 92-85 Hapoel IBI Tel Aviv"}]
+block = bot.recap_block("sport", [{"label": "יורוליג", "text": "ברצלונה גברה על הפועל", "result": 0},
+                                  {"label": "יורוליג", "text": "הפועל הפסידה 85:92", "result": 0},
+                                  {"label": "x", "text": "המצאה", "result": 5}], res)
+assert "ברצלונה גברה על הפועל (85:92)" in block and "הפועל הפסידה 85:92" in block and "(85:92)" not in block.split("\n")[2]
+assert "המצאה" not in block
+
+# ✍️ עורך שני: מתקן ניסוח, מוריד כפילות; נכשל — הטקסט המקורי נשאר
+ai = {"ent": [dict(good, id="w1", bottom_line="YNET חשף: א"), dict(good, id="w2", title="כפול")],
+      "ent_recap": [{"label": "האח הגדול", "text": "x", "ids": ["w1"]}]}
+real_ask, bot.ask_ai = bot.ask_ai, lambda s, p: {"topics": [{"key": "ent", "items": [
+    {"id": "w1", "title": "א", "bottom_line": "א נקי"}, {"id": "w2", "drop": True}], "recap": [{"n": 0, "text": "y"}]}]}
+bot.edit_pass(ai)
+assert [e["bottom_line"] for e in ai["ent"]] == ["א נקי"] and ai["ent_recap"][0]["text"] == "y"
+def boom(s, p):
+    raise RuntimeError("down")
+bot.ask_ai = boom
+bot.edit_pass(ai)
+assert ai["ent"][0]["bottom_line"] == "א נקי" and bot.FAILURES[-1].startswith("• <b>עורך")
+bot.ask_ai = real_ask
 bot.FAILURES.clear()
 
 print("ok")

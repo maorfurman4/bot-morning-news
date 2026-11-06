@@ -347,6 +347,43 @@ def fmt_insider(i: dict) -> str:
     return (f'• <a href="http://openinsider.com/{esc(i["ticker"])}"><b>{esc(i["ticker"])}</b></a> ({esc(i["company"][:28].rstrip(" ,."))}) — '
             f"{i['role']} קנה ב-<b>{v}</b>, במחיר {esc(i['price'])}")
 
+# תוצאות רשמיות של קבוצות ישראליות באירופה — כדי שהתוצאה בבלוק "אמש במגרשים" תהיה מדויקת
+# (ליגת העל — אין מקור חינמי; שם התוצאה מגיעה מהכתבה)
+ISRAELI = re.compile(r"Tel[- ]?Aviv|Jerusalem|Haifa|Be.?er[- ]?Sheva|Holon|Netanya|Herzliya|Ashdod|Petah|Ness Ziona|"
+                     r"Galil|Ramat Gan|Rishon|Kiryat", re.I)
+EUROLEAGUE = {"E": "יורוליג", "U": "יורוקאפ"}
+UEFA = {"uefa.champions": "ליגת האלופות", "uefa.europa": "הליגה האירופית", "uefa.europa.conf": "הקונפרנס ליג"}
+
+def get_results(now: datetime) -> list:
+    out = []
+    season = now.year if now.month >= 8 else now.year - 1
+    for code, comp in EUROLEAGUE.items():
+        try:
+            games = json.loads(fetch(f"https://api-live.euroleague.net/v2/competitions/{code}/seasons/{code}{season}/games"))["data"]
+        except Exception as ex:
+            fail(f"תוצאות {comp}", ex)
+            continue
+        for g in games:
+            home, away = g["local"]["club"]["name"], g["road"]["club"]["name"]
+            when = datetime.fromisoformat(g["utcDate"].replace("Z", "+00:00"))
+            when = when if when.tzinfo else when.replace(tzinfo=timezone.utc)
+            if g.get("played") and now - when <= MAX_AGE and ISRAELI.search(home + away):
+                out.append({"comp": comp, "game": f"{home} {g['local']['score']}-{g['road']['score']} {away}"})
+    for league, comp in UEFA.items():
+        for day in sorted({(now - timedelta(days=1)).strftime("%Y%m%d"), now.strftime("%Y%m%d")}):
+            try:
+                events = json.loads(fetch(f"https://site.api.espn.com/apis/site/v2/sports/soccer/{league}/scoreboard?dates={day}"))["events"]
+            except Exception as ex:
+                fail(f"תוצאות {comp}", ex)
+                continue
+            for e in events:
+                c = e["competitions"][0]
+                t = {x["homeAway"]: x for x in c["competitors"]}
+                names = t["home"]["team"]["displayName"], t["away"]["team"]["displayName"]
+                if c["status"]["type"]["completed"] and ISRAELI.search(" ".join(names)):
+                    out.append({"comp": comp, "game": f"{names[0]} {t['home']['score']}-{t['away']['score']} {names[1]}"})
+    return out
+
 def get_holdings() -> dict:
     out = {}
     for ticker in HOLDINGS:
@@ -386,13 +423,13 @@ TOPICS = {
               "גדולים. אסור: קבוצות חלשות, מאבקי תחתית/ירידה, הרכבים צפויים, שחקנים שוליים, תוצאות סתמיות — גם אם חסרות ידיעות. כמה כתבות על אותו שחקן או קבוצה — "
               "ידיעה אחת. תוצאות ומספרים — רק כמו שכתוב בכתבה. "
               "טון קליל וזורם, כמו מוסף ספורט — כותרות עם חיוך ופאנץ', אבל העובדות מדויקות. "
-              "bottom_line: משפט עובדתי ואז משפט קליל עם חיוך — לא \"המשמעות\" ולא ניתוח כבד."),
+              "bottom_line: משפט אחד חד וקליל (עד 25 מילים) עם העובדה המרכזית — בלי \"המשמעות\" ובלי ניתוח."),
     "ent": ("🎬", "בידור וריאליטי",
             "בידור, סלבס וריאליטי, בעיקר ישראלי: כל ריאליטי ישראלי שרץ עכשיו (הדחות, דרמות, זוכים), סלבס ישראלים — "
             "ומהעולם רק הכי גדולים. רכילות מותרת בלי פילטרים (פרידות, קשרים, סקנדלים) — אבל רק עובדות שכתובות בכתבה, "
             "בלי להמציא. מדי פעם, כשיוצאת סדרה או סרט גדולים או מוערכים מאוד — גם זה. "
             "טון קליל וזורם, כמו מוסף סוף שבוע — כותרות עם חיוך ופאנץ'. "
-            "bottom_line: משפט עובדתי ואז משפט קליל עם חיוך — לא \"המשמעות\" ולא ניתוח כבד."),
+            "bottom_line: משפט אחד חד וקליל (עד 25 מילים) עם העובדה המרכזית — בלי \"המשמעות\" ובלי ניתוח."),
 }
 
 RULES = """
@@ -407,32 +444,41 @@ RULES = """
    לפתוח ישר בעובדה — בלי "הכתבה מציינת/מדווחת ש...", בלי התווית "המשמעות האמיתית:", ובלי לחזור על הכותרת.
    אסור משפטי סרק כמו "זה חשוב כי זה עשוי להשפיע על...". אם הכתבה לא מספקת משמעות — רק עובדות.
    אם בהגדרת הנושא כתוב טון אחר (ספורט, בידור) — הטון של הנושא גובר על סעיף זה.
+   אסור לכתוב בטקסט את שם המקור ("YNET חשף", "רשת 13 פרסמה") או מתי פורסם (age_hours) — הם מוצגים בנפרד.
 4. כמה כתבות על אותו סיפור → פריט אחד, מהכתבה המפורטת ביותר.
 5. הכל בעברית עסקית וזורמת. שם באנגלית מותר בתוך משפט, לא בתחילתו.
 """
 
 TOPIC_FORMAT = """
-בחר בדיוק את 5 הידיעות החשובות והרלוונטיות ביותר בנושא, לפי סדר חשיבות.
-הכי עדכני קודם: age_hours = כמה שעות עברו מהפרסום. העדף את הטרי ביותר, ואת הסיפורים שמופיעים בכמה כתבות וכמה מקורות —
-זה מה שכולם מדברים עליו עכשיו. הכל מ-24 השעות האחרונות. אם יש פחות מ-5 ידיעות שבאמת שייכות לנושא — רק אותן;
+בחר עד 7 ידיעות לפי סדר חשיבות (יוצגו 5 הראשונות שעוברות בדיקה) — החשובות והרלוונטיות ביותר בנושא.
+הכי עדכני קודם: age_hours = כמה שעות עברו מהפרסום; sources = בכמה מקורות שונים מופיע אותו סיפור.
+העדף את הטרי ביותר, ואת הסיפורים עם sources גבוה —
+זה מה שכולם מדברים עליו עכשיו. הכל מ-24 השעות האחרונות. אם יש פחות ידיעות שבאמת שייכות לנושא — רק אותן;
 לעולם לא למלא בידיעות מנושא אחר (או ברכילות, חוץ מבנושא הבידור).
 
 החזר JSON בלבד:
 {"items": [{"id": "...", "source_title": "...", "emoji": "אימוג'י אחד שמתאים לידיעה הספציפית, לא דגל", "title": "...", "bottom_line": "..."}]}
 """
 
+# בשישי ושבת אין שידורי ריאליטי — הבידור מתמקד במוספי סוף השבוע
+WEEKEND_ENT = ("\nהיום סוף שבוע: בדרך כלל לא שודר ריאליטי אמש — התמקד בראיונות ובכתבות הגדולות של מוספי סוף השבוע "
+               "ובשיאים של השבוע בריאליטי (מי הודח השבוע, הרגעים שכולם דיברו עליהם).")
+
 # בלוק קבוע בראש ההודעה: "מה קרה אמש" — רק לנושאים האלה; ריק → לא מוצג
 RECAP = {
     "sport": ("🏟️", "אמש במגרשים",
-              "המשחקים החשובים מאמש: קבוצות ישראליות באירופה (יורוליג, יורוקאפ, מפעלי אירופה בכדורגל), משחקי צמרת "
+              "results = תוצאות רשמיות של קבוצות ישראליות באירופה: לכל משחק שם — שורה, עם התוצאה בדיוק משם, "
+              "ו-result = האינדקס שלו ב-results (ids של כתבה — אם יש). בנוסף, המשחקים החשובים מאמש: קבוצות ישראליות באירופה (יורוליג, יורוקאפ, מפעלי אירופה בכדורגל), משחקי צמרת "
               "בליגת העל, נבחרת ישראל; אבדיה וישראלים בחו\"ל — רק אם היה משחק מטורף או חדשה מרהיבה. "
-              "label = הקבוצה או המפעל, text = התוצאה כמו שכתובה בכתבה + חצי משפט. בלי משחקים סתמיים"),
+              "label = המפעל בלבד: יורוליג / יורוקאפ / ליגת האלופות / הליגה האירופית / הקונפרנס ליג / ליגת העל / NBA / נבחרת "
+              "(ישראלי בחו\"ל — לפי המפעל של הקבוצה שלו); text = שתי הקבוצות והתוצאה + חצי משפט. בלי משחקים סתמיים"),
     "ent": ("📺", "אמש בריאליטי",
             "כל ריאליטי ששודר אמש או בלילה: label = שם התוכנית, text = מה שהכי מדברים עליו — קודם כל מי הודח, "
-            "נחשף או ניצח. תוכנית שלא שודרה — לא להזכיר"),
+            "נחשף או ניצח. תוכנית שלא שודרה — לא להזכיר. חריג אחד: אם הערב עולה פרק פתיחה של עונה חדשה של ריאליטי — "
+            "שורה עם label = \"הערב\" ו-text = שם התוכנית ומה צפוי"),
 }
 RECAP_FORMAT = """
-בנוסף החזר באותו JSON: "recap": [{{"label": "...", "text": "...", "ids": ["..."]}}] — {rule}.
+בנוסף החזר באותו JSON: "recap": [{{"label": "...", "text": "...", "ids": ["..."], "result": null}}] — {rule}.
 שורה קצרה לכל פריט, רק ממה שכתוב בכתבות; אם אין — רשימה ריקה. ה-items לא חוזרים על מה שב-recap.
 """
 
@@ -459,17 +505,122 @@ MARKET_FORMAT = """
 
 ITEMS = {}  # id → כתבה, כדי שהקישורים והמקורות יגיעו מהנתונים ולא מה-AI
 
+def coverage(items: list) -> list:
+    """לכל כתבה: בכמה מקורות שונים מופיע אותו סיפור (3+ מילים משותפות בכותרת) — "כולם מדברים על זה"."""
+    words = [set(re.findall(r"\w{3,}", i["title"].lower())) for i in items]
+    return [len({b["source"] for b, wb in zip(items, words) if len(wa & wb) >= 3}) for wa in words]
+
 def register(prefix: str, items: list, now: datetime | None = None) -> list:
     out = []
+    counts = coverage(items) if now else [1] * len(items)
     for n, i in enumerate(items, 1):
         ITEMS[f"{prefix}{n}"] = i
         entry = {"id": f"{prefix}{n}", "source": i["source"], "title": i["title"]}
-        if now:  # כדי שה-AI יעדיף את הטרי ביותר
+        if now:  # כדי שה-AI יעדיף את הטרי ביותר ואת מה שכולם מדברים עליו
             entry["age_hours"] = max(0, round((now - i["published"]).total_seconds() / 3600))
+            if counts[n - 1] > 1:
+                entry["sources"] = counts[n - 1]
         if not i["summary"].startswith(i["title"][:40]):  # ב-Google News התקציר הוא שוב הכותרת — טוקנים לפח
             entry["summary"] = i["summary"]
         out.append(entry)
     return out
+
+# ── תאריך אמיתי: Google News לפעמים מתארך כתבות ישנות כחדשות (מעריב, 06/11/2026) ──
+
+PUBLISHED_RE = re.compile(r'"datePublished"\s*:\s*"([^"]+)"|article:published_time"\s+content="([^"]+)"')
+
+def real_url(link: str) -> str | None:
+    """קישור של Google News → כתובת הכתבה עצמה.
+    shortcut: ממשק לא רשמי של גוגל (batchexecute) — אם ישתנה, נחזיר None והכתבה פשוט לא תיבדק"""
+    if "news.google.com" not in link:
+        return link
+    aid = link.split("/articles/")[1].split("?")[0]
+    page = fetch(f"https://news.google.com/articles/{aid}").decode("utf-8", "ignore")
+    sg, ts = re.search(r'data-n-a-sg="([^"]+)"', page), re.search(r'data-n-a-ts="([^"]+)"', page)
+    if not (sg and ts):
+        return None
+    req = [["Fbv4je", json.dumps(["garturlreq", [["X", "X", ["X", "X"], None, None, 1, 1, "US:en", None, 1, None, None,
+                                                   None, None, None, 0, 1], "X", "X", 1, [1, 1, 1], 1, 1, None, 0, 0, None, 0],
+                                  aid, int(ts.group(1)), sg.group(1)]), None, "generic"]]
+    resp = requests.post("https://news.google.com/_/DotsSplashUi/data/batchexecute", timeout=15,
+                         headers={"User-Agent": "Mozilla/5.0", "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"},
+                         data="f.req=" + quote_plus(json.dumps([req])))
+    m = re.search(r'\[\\"garturlres\\",\\"(https?://[^\\]+)', resp.text)
+    return m.group(1) if m else None
+
+def real_date(link: str) -> datetime | None:
+    """התאריך שכתוב בכתבה עצמה; None אם אי אפשר לדעת (אתר שחוסם, אין תאריך בדף) — ואז לא פוסלים."""
+    try:
+        url = real_url(link)
+        m = url and PUBLISHED_RE.search(fetch(url).decode("utf-8", "ignore"))
+        if not m:
+            return None
+        d = datetime.fromisoformat(next(g for g in m.groups() if g).replace("Z", "+00:00"))
+        return d if d.tzinfo else d.replace(tzinfo=IL_TZ)
+    except Exception:
+        return None
+
+def stale_links(ai: dict, now: datetime) -> set:
+    """קישורי Google News שה-AI בחר והכתבה עצמה ישנה מ-MAX_AGE."""
+    picked = {ITEMS[i]["link"] for k in TOPICS for r in ai.get(f"{k}_recap") or [] for i in r.get("ids") or [] if i in ITEMS}
+    picked |= {item["link"] for k in TOPICS for e in ai.get(k) or [] if (item := resolve(e))}
+    picked = [l for l in picked if "news.google.com" in l]
+    with ThreadPoolExecutor(16) as pool:
+        dates = dict(zip(picked, pool.map(real_date, picked)))
+    stale = {l for l, d in dates.items() if d and now - d > MAX_AGE}
+    print(f"🗓️ real dates: {sum(d is not None for d in dates.values())}/{len(picked)} checked, {len(stale)} stale")
+    return stale
+
+def drop_stale(ai: dict, stale: set) -> None:
+    for k in TOPICS:
+        ai[k] = [e for e in ai.get(k) or [] if (resolve(e) or {}).get("link") not in stale]
+        for r in ai.get(f"{k}_recap") or []:
+            r["ids"] = [i for i in r.get("ids") or [] if i in ITEMS and ITEMS[i]["link"] not in stale]
+
+EDITOR = """
+אתה עורך-על של בריף בוקר בעברית. קיבלת את כל הידיעות שנבחרו, לפי נושא. תקן רק ניסוח וכפילויות:
+1. אותו סיפור פעמיים — באותו נושא, בין נושאים, או בין שורה ב-recap לידיעה: drop=true לכפול (השאר את הראשון).
+2. מחק פתיחות כמו "YNET חשף", "הכתבה מציינת", "לפי הדיווח", זמני פרסום ("פורסם לפני X שעות") והתווית "המשמעות:".
+3. טון: בספורט ובבידור — קליל וזורם, משפט אחד חד; בשאר — ענייני ומדויק.
+4. אסור להוסיף עובדות, מספרים, שמות או תוצאות שלא כתובים בטקסט שקיבלת, ואסור לשנות תוצאות.
+החזר JSON בלבד, באותו מבנה: {"topics": [{"topic": "...", "items": [{"id": "...", "title": "...", "bottom_line": "...",
+"drop": false}], "recap": [{"n": 0, "text": "...", "drop": false}]}]}
+"""
+
+def edit_pass(ai: dict) -> None:
+    """עורך שני על הטקסט הסופי; אם נכשל — נשאר הטקסט המקורי."""
+    payload = {"topics": [{"topic": TOPICS[k][1], "key": k,
+                           "items": [{"id": e.get("id"), "title": e.get("title"), "bottom_line": e.get("bottom_line")}
+                                     for e in ai.get(k) or []],
+                           "recap": [{"n": n, "label": r.get("label"), "text": r.get("text")}
+                                     for n, r in enumerate(ai.get(f"{k}_recap") or [])]} for k in TOPICS if ai.get(k)]}
+    try:
+        edited = {t.get("key") or t.get("topic"): t for t in ask_ai(EDITOR, payload).get("topics") or []}
+    except Exception as ex:
+        fail("עורך", ex)
+        return
+    for k in TOPICS:
+        t = edited.get(k) or edited.get(TOPICS[k][1]) or {}
+        fixes = {x.get("id"): x for x in t.get("items") or []}
+        kept = []
+        for e in ai.get(k) or []:
+            x = fixes.get(e.get("id"), {})
+            if x.get("drop"):
+                continue
+            e.update({f: x[f] for f in ("title", "bottom_line") if isinstance(x.get(f), str) and x[f].strip()})
+            kept.append(e)
+        ai[k] = kept
+        rows = ai.get(f"{k}_recap") or []
+        drops = set()
+        for x in t.get("recap") or []:
+            n = x.get("n")
+            if isinstance(n, int) and 0 <= n < len(rows):
+                if x.get("drop"):
+                    drops.add(n)
+                elif isinstance(x.get("text"), str) and x["text"].strip():
+                    rows[n]["text"] = x["text"]
+        if rows:
+            ai[f"{k}_recap"] = [r for n, r in enumerate(rows) if n not in drops]
 
 def ask_ai(system: str, payload: dict) -> dict:
     last_error = None
@@ -516,25 +667,51 @@ def resolve(e: dict):
         return item
     return next((i for i in ITEMS.values() if _norm(i["title"]) == want), None)
 
-def article(e: dict, need_id: bool = True) -> str:
+LIGHT = {"sport", "ent"}  # פורמט קליל: כותרת + משפט אחד, בלי "השורה התחתונה"
+
+def article(e: dict, need_id: bool = True, light: bool = False) -> str:
     item = resolve(e)
     if not e.get("title") or not e.get("bottom_line") or (not item and (need_id or e.get("id"))):
         print(f"🚫 dropped (no matching article): id={e.get('id')} source_title={e.get('source_title')!r}")
         return ""  # פריט שלא מתאים לכתבה אמיתית — לא מציגים
-    out = f"🔹 <b>{esc(e.get('emoji', ''))} {esc(e['title'])}</b>\n💡 <i>השורה התחתונה:</i> {esc(e['bottom_line'])}"
+    out = f"🔹 <b>{esc(e.get('emoji', ''))} {esc(e['title'])}</b>\n" + (
+        esc(e["bottom_line"]) if light else f"💡 <i>השורה התחתונה:</i> {esc(e['bottom_line'])}")
     if item:
         out += f"\n🔗 <a href=\"{esc(item['link'])}\">לקריאת הכתבה המלאה</a> · {esc(item['source'])}"
     return out
 
-def recap_block(key: str, rows: list) -> str:
+def recap_block(key: str, rows: list, results: list = ()) -> str:
     icon, title, _ = RECAP[key]
     out = []
     for r in rows or []:
         ids = [i for i in r.get("ids") or [] if i in ITEMS]
-        if r.get("label") and r.get("text") and ids:  # רק שורה שמבוססת על כתבה אמיתית
-            src = ITEMS[ids[0]]
-            out.append(f'• <b>{esc(r["label"])}</b> — {esc(r["text"])} · <a href="{esc(src["link"])}">{esc(src["source"])}</a>')
+        res = results[r["result"]] if isinstance(r.get("result"), int) and 0 <= r["result"] < len(results) else None
+        if not (r.get("label") and r.get("text") and (ids or res)):
+            continue  # רק שורה שמבוססת על כתבה אמיתית או על תוצאה רשמית
+        text = r["text"]
+        if res:  # התוצאה הרשמית חייבת להופיע — אם ה-AI לא כתב אותה, מוסיפים
+            a, b = re.findall(r"(\d+)-(\d+)", res["game"])[-1]
+            if not re.search(rf"\b({a}\D{{1,3}}{b}|{b}\D{{1,3}}{a})\b", text):
+                text += f" ({b}:{a})"
+        line = f'• <b>{esc(r["label"])}</b> — {esc(text)}'
+        if ids:
+            line += f' · <a href="{esc(ITEMS[ids[0]]["link"])}">{esc(ITEMS[ids[0]]["source"])}</a>'
+        out.append(line)
     return f"{icon} <b>{title}</b>\n" + "\n".join(out) if out else ""
+
+def topic_blocks(key: str, ai: dict) -> list:
+    """בלוק "אמש" (אם יש) + עד 5 ידיעות; ידיעה על כתבה שכבר בבלוק או כבר הוצגה — מדלגים לבאה בתור."""
+    rows = ai.get(f"{key}_recap") or [] if key in RECAP else []
+    seen = {ITEMS[i]["link"] for r in rows for i in r.get("ids") or [] if i in ITEMS}
+    out = []
+    for e in ai.get(key) or []:
+        link = (resolve(e) or {}).get("link")
+        if link in seen or len(out) == 5:
+            continue
+        if a := article(e, light=key in LIGHT):
+            out.append(a)
+            seen.add(link)
+    return [recap_block(key, rows, ai.get(f"{key}_results") or []) if key in RECAP else "", *out]
 
 def render(today: datetime, market_rows: list, close_date, holdings: dict, ai: dict, channel: bool = False,
            insiders: list = ()) -> tuple:
@@ -572,8 +749,7 @@ def render(today: datetime, market_rows: list, close_date, holdings: dict, ai: d
     ]
 
     date = f"<i>{today:%d/%m/%Y}</i>"
-    public = [(f"{icon} <b>{name}</b> · {date}", [recap_block(key, ai.get(f"{key}_recap")) if key in RECAP else "",
-                                                       *[article(e) for e in (ai.get(key) or [])[:5]]]) for key, (icon, name, _) in TOPICS.items()]
+    public = [(f"{icon} <b>{name}</b> · {date}", topic_blocks(key, ai)) for key, (icon, name, _) in TOPICS.items()]
     public.append((f"📈 <b>שוק ההון</b> · {date}", market))
     private = [
         (f"💼 <b>המניות שלך</b> · {date}", mine if holdings else []),
@@ -632,8 +808,11 @@ def build() -> list:
     stock_news = {t: register(f"h{t}_", items) for t, items in per_stock.items()}
     print("📰 " + ", ".join(f"{k}: {len(v)}" for k, v in news.items()) + f", stocks: {sum(map(len, stock_news.values()))}")
 
-    jobs = {key: (RULES + f"\nהנושא: {name} — {rule}\n" + TOPIC_FORMAT
-                  + (RECAP_FORMAT.format(rule=RECAP[key][2]) if key in RECAP else ""), {"articles": news[key]})
+    results = get_results(now)
+    weekend = now.astimezone(IL_TZ).weekday() in (4, 5)  # שישי, שבת
+    jobs = {key: (RULES + f"\nהנושא: {name} — {rule}\n" + (WEEKEND_ENT if key == "ent" and weekend else "") + TOPIC_FORMAT
+                  + (RECAP_FORMAT.format(rule=RECAP[key][2]) if key in RECAP else ""),
+                  {"articles": news[key], **({"results": results} if key == "sport" else {})})
             for key, (_, name, rule) in TOPICS.items()}
     jobs["market"] = (RULES + MARKET_FORMAT, {
         "markets": [re.sub(r"<[^>]+>", "", r) for r in market_rows],
@@ -661,6 +840,9 @@ def build() -> list:
             ai[key] = result.get("items", [])
             if key in RECAP:
                 ai[f"{key}_recap"] = result.get("recap") or []
+    ai["sport_results"] = results
+    drop_stale(ai, stale_links(ai, now))
+    edit_pass(ai)
     print("🧠 AI returned: " + ", ".join(f"{k}: {len(v)}" for k, v in ai.items() if isinstance(v, list)) + f", insiders: {len(insiders)}")
     public, private = render(now.astimezone(IL_TZ), market_rows, close_date, holdings, ai, channel=bool(CHANNEL_ID),
                              insiders=insiders)
