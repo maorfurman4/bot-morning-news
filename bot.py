@@ -960,9 +960,13 @@ def build() -> list:
                 ai[f"{key}_he"] = result.get("he_names") if isinstance(result.get("he_names"), dict) else {}
     ai["sport_results"] = results
     ai["ent_tv"] = [x["title"] for x in tv_last + tv_tonight]
+    count = lambda: {k: len(ai.get(k) or []) for k in ("sport", "ent")}
+    print(f"🔎 candidates: {count()}")
     drop_stale(ai, stale_links(ai, now))
     move_sporty(ai)
+    print(f"🔎 after date check + sport move: {count()}")
     edit_pass(ai)
+    print(f"🔎 after editor: {count()}")
     print("🧠 AI returned: " + ", ".join(f"{k}: {len(v)}" for k, v in ai.items() if isinstance(v, list)) + f", insiders: {len(insiders)}")
     public, private = render(now.astimezone(IL_TZ), market_rows, close_date, holdings, ai, channel=bool(CHANNEL_ID),
                              insiders=insiders)
