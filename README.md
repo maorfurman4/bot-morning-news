@@ -15,7 +15,7 @@
 4א. ⚽ ספורט — ישראלים בחו"ל ודני אבדיה (תמיד), מדליות של ספורטאים ישראלים, כדורגל/כדורסל ישראלי רק כשמעניין,
    וכוכבי-על בעולם. מקורות: מדור הספורט של Google News ישראל (מדורג לפי מה שחם עכשיו), ynet ספורט, וואלה ספורט, ספורט 5, BBC Sport + חיפושים על אבדיה ומדליות
 4ב. 🎬 בידור וריאליטי — ריאליטי ישראלי שרץ עכשיו, סלבס בעיקר ישראלים, רכילות מותרת (רק מה שבכתבה), מדי פעם סדרה/סרט גדולים.
-   מקורות: מדור הבידור של Google News ישראל (מה שחם עכשיו), ynet בידור, וואלה סלבס, mako + חיפוש על האח הגדול/הישרדות/חתונמי. טון קליל בשתיהן
+   מקורות: מדור הבידור של Google News ישראל (מה שחם עכשיו), חיפוש נפרד לכל ריאליטי (`REALITY_SHOWS`), ynet בידור, וואלה סלבס, mako + חיפוש על האח הגדול/הישרדות/חתונמי. טון קליל בשתיהן
 5. 📈 שוק ההון — כותרת היום, טבלת סגירה (S&P 500, Nasdaq, Dow, TA-35, VIX, US 10Y, USD/ILS, Brent),
    "מה הזיז את השוק" (2), "על מה לשים לב" (2 — ריבית, אינפלציה, דוחות, גאופוליטיקה, נפט),
    🕵️ רכישות פנים (עד 5 קניות של מנכ"לים/סמנכ"לים/דירקטורים מעל 100 אלף דולר מהיממה האחרונה), ידיעה בולטת ושורת מקורות.
@@ -40,7 +40,7 @@
 - **חדשות**: כ-45 מקורות ב-`FEEDS` — ישראל: הכותרות הראשיות של Google News ישראל, ynet, גלובס, הארץ, מעריב, וואלה,
   כאן 11, mako, Times of Israel, Jerusalem Post, Reuters, כלכליסט, TheMarker; AI: TechCrunch, MIT Technology Review,
   Ars Technica, Wired, The Verge, The Decoder, Reuters; טכנולוגיה: BBC, TechCrunch, IEEE Spectrum, Ars Technica, Wired,
-  Engadget, The Verge, The Register, Electrek, Geektime, Reuters; עולם: BBC, Reuters, AP, Guardian, New York Times,
+  Engadget, The Verge, The Register, Electrek, Reuters; עולם: BBC, Reuters, AP, Guardian, New York Times,
   Al Jazeera, NPR, CNBC; שוק: CNBC, MarketWatch, Investing.com, גלובס שוק ההון, Bloomberg, Reuters +
   Google News מסונן למקורות אמינים (`TRUSTED`). רק 26 השעות האחרונות, עד 6 כתבות ממקור ועד 50 לנושא (`PER_TOPIC`),
   לסירוגין בין המקורות
