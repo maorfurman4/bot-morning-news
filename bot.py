@@ -1124,7 +1124,7 @@ if __name__ == "__main__":
         raise
     only = next((a.split("=", 1)[1].split(",") for a in sys.argv if a.startswith("--only=")), None)
     if only:  # בדיקה: רק הנושאים האלה, ורק אליך בפרטי — הערוץ לא מקבל כלום
-        heads = [f"{TOPICS[k][0]} <b>{TOPICS[k][1]}</b>" for k in only]
+        heads = [f"{TOPICS[k][0]} <b>{TOPICS[k][1]}</b>" if k in TOPICS else "📈 <b>שוק ההון</b>" for k in only]
         public, private, CHANNEL_ID = [m for m in public if any(h in m for h in heads)], [], ""
     for msg, chat in [(m, CHANNEL_ID or CHAT_ID) for m in public] + [(m, CHAT_ID) for m in private]:
         if "--dry-run" in sys.argv:
