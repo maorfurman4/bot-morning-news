@@ -781,7 +781,7 @@ def clean_text(text, title="") -> str:
     if title and len(kept) > 1:
         tw = set(re.findall(r"\w{3,}", title))
         fw = set(re.findall(r"\w{3,}", kept[0]))
-        if tw and len(tw & fw) >= 0.6 * len(tw):
+        if tw and len(tw & fw) >= 0.8 * len(tw):  # רק משפט שכמעט זהה לכותרת (ב-0.6 נמחקו גם עובדות)
             kept = kept[1:]  # גוף שחוזר על הכותרת — מתחילים ממה שחדש
     return " ".join(kept)
 
