@@ -293,6 +293,17 @@ ai = {"market_why": [{"label": "תל אביב", "text": "ת\"א-35 זינק 3% �
 pub, _ = bot.render(now, ["🟢 a"], None, {}, ai, channel=True)
 mkt = "\n".join(next(m for m in pub if any("שוק ההון" in b for b in m[:2])))
 assert "• <b>תל אביב</b> — ת&quot;א-35 זינק 3%, החזק מאז מרץ" in mkt
+# 🔤 ז'רגון → עברית בכל הבריף; בשוק — נושא אחד בחלק אחד
+assert bot.plain_hebrew("CFO של Binance עוזב; לוק-אפ SpaceX; המפגש החזק ביותר; הסשן נסגר") == \
+    'סמנכ"ל הכספים של Binance עוזב; תום תקופת החסימה SpaceX; יום המסחר החזק ביותר; יום המסחר נסגר'
+assert bot.plain_hebrew("המפגש עם השר") == "המפגש עם השר"  # "מפגש" רגיל לא נוגעים
+assert "סמנכ&quot;ל הכספים" in bot.article(dict(good, title="CFO עוזב"))
+ai = {"market_why": [{"label": "אינפלציה", "text": "עונת הדיווחים", "ids": []}, {"label": "ת\"א", "text": "זינוק", "ids": []}],
+      "watch": [{"label": "נתוני אינפלציה", "text": "בקרוב", "ids": []}]}
+pub, _ = bot.render(now, ["🟢 a"], None, {}, ai, channel=True)
+mkt = "\n".join(next(m for m in pub if any("שוק ההון" in b for b in m[:2])))
+assert "עונת הדיווחים" not in mkt and "בקרוב" in mkt and "זינוק" in mkt
+assert bot.short_source("Yahoo Finance") == "Yahoo"
 bot.FAILURES.clear()
 
 print("ok")
