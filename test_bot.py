@@ -279,6 +279,10 @@ msgs, _ = bot.render(now, [], None, {}, {"sport": [rabbit], "ent": [good], "ent_
     "ent_tv_last": [{"title": "הזמר במסכה - הארנב נתפס"}], "ent_reality": ["הזמר במסכה"]})
 text = "\n".join(sum(msgs, []))
 assert "הארנב נחשף: איתי שכטר" in text and "איתי שכטר הוא הזמר במסכה" not in text  # בבלוק, לא כידיעה בספורט
+# שדה מה-AI שהגיע כרשימה לא מפיל את הבריף (קרס כך ב-08/11/2026)
+assert bot.clean_text(["אבי שושן הודח.", "עוד"]) == "אבי שושן הודח. עוד"
+assert bot.recap_block("ent", [{"label": ["הישרדות"], "text": ["אבי שושן הודח"], "ids": ["w1"]}]).count("•") == 1
+assert "<b>" in bot.article(dict(good, title=["א"], bottom_line=["ב"]))
 bot.FAILURES.clear()
 
 print("ok")

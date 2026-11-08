@@ -764,9 +764,16 @@ def resolve(e: dict):
 
 META = re.compile(r"הכתבה|בכתבה|הדיווח|בדיווח|לפי הדיווח|הידיעה|פרטים נוספים לא|כתבות עוסקות|מקורות מדווחים|פורסם ב")
 
-def clean_text(text: str, title: str = "") -> str:
+def as_text(v) -> str:
+    """שדה מה-AI כטקסט — לפעמים הוא מחזיר רשימה במקום מחרוזת (הבריף קרס כך ב-08/11/2026)."""
+    if isinstance(v, (list, tuple)):
+        return " ".join(as_text(x) for x in v)
+    return "" if v is None else str(v)
+
+def clean_text(text, title="") -> str:
     """מוחק משפטים שמדברים על הכתבה ("הכתבה רושמת...", "פרטים נוספים לא נמסרו"), ומשפט ראשון שרק חוזר על הכותרת."""
-    parts = [p.strip() for p in re.split(r"(?<=[.!?])\s+", text or "") if p.strip()]
+    text, title = as_text(text), as_text(title)
+    parts = [p.strip() for p in re.split(r"(?<=[.!?])\s+", text) if p.strip()]
     parts = [re.sub(r"^המשמעות(\s+\S+)?:\s*", "", p) for p in parts]  # "המשמעות המיידית: ..." → בלי התווית
     kept = [p for p in parts if not META.search(p)] or parts
     if title and len(kept) > 1:
@@ -779,6 +786,7 @@ def clean_text(text: str, title: str = "") -> str:
 LIGHT = {"sport", "ent"}  # פורמט קליל: כותרת + משפט אחד, בלי "השורה התחתונה"
 
 def article(e: dict, need_id: bool = True, light: bool = False) -> str:
+    e = dict(e, **{f: as_text(e.get(f)) for f in ("title", "bottom_line", "emoji") if e.get(f) is not None})
     item = resolve(e)
     if not e.get("title") or not e.get("bottom_line") or (not item and (need_id or e.get("id"))):
         print(f"🚫 dropped (no matching article): id={e.get('id')} source_title={e.get('source_title')!r}")
@@ -825,7 +833,7 @@ def reality_on(tv: list, names: list = SHOW_NAMES) -> list:
 def short_fact(label: str, text: str) -> str:
     """שורה בבלוק הריאליטי = רק העובדה ("אבי שושן הודח", "הארנב נחשף: X"): בלי שם התוכנית שוב, בלי הסבר
     אחרי ';' או אחרי המשפט הראשון, ובלי "כפי שנרשם בלוח השידורים"."""
-    t = (text or "").strip()
+    t, label = as_text(text).strip(), as_text(label)
     name = _plain(label)
     if name and _plain(t).startswith(name):  # "הישרדות: אבי שושן הודח" → "אבי שושן הודח"
         t = re.sub(r"^\s*[\"'״׳]?" + re.escape(label.strip('"\'״׳')) + r"[\"'״׳]?\s*[:—–-]\s*", "", t)
@@ -851,8 +859,8 @@ def recap_rows(key: str, rows: list, results: list = (), shown: set = frozenset(
     aired = [n for n, _ in reality_on(tv_last_items(tv_last), names)] if key == "ent" else []
     for r in rows or []:
         ids = [i for i in r.get("ids") or [] if i in ITEMS]
-        text = clean_text(r.get("text") or "")
-        label = r.get("label") or ""
+        text = clean_text(r.get("text"))
+        label = as_text(r.get("label"))
         if label == "הערב":
             continue  # "הערב" נבנה בקוד מהלוח (premiere_line)
         if aired:
@@ -862,7 +870,7 @@ def recap_rows(key: str, rows: list, results: list = (), shown: set = frozenset(
             continue  # רק שורה שמבוססת על כתבה אמיתית או על תוכנית שבאמת בלוח השידורים
         if not (label and text):
             continue
-        r = dict(r, text=short_fact(label, text) if key == "ent" else text)
+        r = dict(r, label=label, text=short_fact(label, text) if key == "ent" else text)
         if not r["text"]:
             continue
         show = re.sub(r"[\"'״׳]", "", label).split(" - ")[0].split(" (")[0].strip()
