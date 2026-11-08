@@ -231,14 +231,54 @@ assert "שי חי הודח" in blocks[0] and len(blocks) == 2 and "הישרדו�
 # בידור: כתבות מחיפושי הריאליטי — לבלוק בלבד; השאר — לידיעות
 gen, rea = bot.split_reality([{"id": "e1"}, {"id": "e2", "found_by_search": "הישרדות"}])
 assert [e["id"] for e in gen] == ["e1"] and [e["id"] for e in rea] == ["e2"]
-# הלוח של הערב — רק לשורת "הערב" בפתיחת עונה; שורה אחת לכל תוכנית
-tonight = ["הישרדות - פרק הדחה!", "הכוכב הבא - פרק 1"]
-got = bot.recap_rows("ent", [{"label": "הישרדות - פרק הדחה! (לוח שידורים)", "text": "מתוכנן הערב", "ids": []},
-                             {"label": "הערב", "text": "הכוכב הבא — פרק 1 של העונה, 21:00", "ids": []},
-                             {"label": "הערב", "text": "הישרדות — פרק הדחה", "ids": []},
-                             {"label": "הזמר במסכה", "text": "x", "ids": ["w1"]}, {"label": "הזמר במסכה", "text": "y", "ids": ["w1"]}],
-                     tv_tonight=tonight)
-assert [(r["label"], r["text"][:9]) for r, _ in got] == [("הערב", "הכוכב הבא"), ("הזמר במסכה", "x")]
+# 📺 הבלוק = הריאליטי ששודר אמש (בקוד): תוכנית שלא שודרה לא נכנסת, ששודרה בלי שורה — מהלוח; "הערב" — רק פתיחת עונה
+last = [{"title": "הזמר במסכה - הארנב נתפס ונחשף!", "channel": "קשת 12", "time": "21:15"},
+        {"title": "הישרדות - פרק הדחה משוגע!", "channel": "רשת 13", "time": "21:15"}, {"title": "חדשות", "channel": "x", "time": "20:00"}]
+tonight = [{"title": "הארץ המובטחת - פרק 1", "channel": "רשת 13", "time": "21:15"},
+           {"title": "הכוכב הבא - פרק 1", "channel": "קשת 12", "time": "21:00"}]
+rows = [{"label": "הישרדות", "text": "אבי שושן הודח. הכתבה מציינת שהיו תגובות.", "ids": ["w1"]},
+        {"label": "רוקדים עם כוכבים", "text": "כתבות עוסקות בזכרונות", "ids": ["w1"]},
+        {"label": "הערב", "text": "הארץ המובטחת — פרק 1 (בכורה/פרק ראשון)", "ids": []}]
+block = bot.recap_block("ent", rows, tv_last=last, tv_tonight=tonight)
+assert "• <b>הישרדות</b> — אבי שושן הודח ·" in block  # משפט על "הכתבה" נמחק
+assert "רוקדים" not in block and "הארץ המובטחת" not in block  # לא שודר אמש / לא ריאליטי
+assert "• <b>הזמר במסכה</b> — הארנב נתפס ונחשף" in block  # שודר, אין שורה — מהלוח
+assert "• <b>הערב</b> — הכוכב הבא, עונה חדשה · קשת 12, 21:00" in block
+# כתיבה נקייה: בלי משפטים על הכתבה, ובלי משפט ראשון שחוזר על הכותרת
+assert bot.clean_text("ריצ'רד לויד, גיטריסט טלוויז'ן, מת בגיל 75. הוא נאבק במחלה.", "ריצ'רד לויד, גיטריסט טלוויז'ן, מת בגיל 75") == "הוא נאבק במחלה."
+assert bot.clean_text("הבמאי מת. פרטים נוספים לא נמסרו בדיווח.") == "הבמאי מת."
+assert bot.clean_text("ההצגה בוטלה. המשמעות המיידית: התפקיד נדחה.") == "ההצגה בוטלה. התפקיד נדחה."
+assert bot.clean_text("הכתבה מציינת ש-X.") == "הכתבה מציינת ש-X."  # הכל מטא — עדיף מאשר ריק
+# Google News 503 לרגע — מנסים שוב במקום לוותר על המקור
+class G:
+    def __init__(self, code):
+        self.status_code, self.content = code, b"ok"
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(self.status_code)
+answers = [G(503), G(200)]
+real_get, real_sleep = bot.requests.get, bot.time.sleep
+bot.requests.get, bot.time.sleep = (lambda *a, **k: answers.pop(0)), (lambda s: None)
+assert bot.fetch("https://news.google.com/x") == b"ok" and not answers
+bot.requests.get, bot.time.sleep = real_get, real_sleep
+# 📺 שורה בבלוק הריאליטי — רק העובדה
+assert bot.short_fact("הישרדות", "הישרדות: אבי שושן הודח; הוא הפסיד מעל מיליון שקל.") == "אבי שושן הודח"
+assert bot.short_fact("הזמר במסכה", "הזמר במסכה: הארנב נתפס ונחשף כפי שנרשם בלוח השידורים.") == "הארנב נתפס ונחשף"
+assert bot.short_fact("הזמר במסכה", "הארנב נחשף: זו נועה קירל") == "הארנב נחשף: זו נועה קירל"
+assert bot.short_fact("הישרדות", "אבי שושן הודח. הוא אמר שזה כואב.") == "אבי שושן הודח"
+# 📺 כל ריאליטי: זיהוי מהלוח ע"י AI (רק שמות שבאמת בלוח, + הרשימה הידועה); הבלוק שומר לעצמו את הכתבות שלו
+real_ask = bot.ask_ai
+bot.ask_ai = lambda s, p: {"reality": ["מירוץ הכוכבים - פרק 3", "תוכנית שלא בלוח", "חדשות"]}
+names = bot.reality_names([{"title": "מירוץ הכוכבים - פרק 3", "description": ""}, {"title": "הישרדות - הדחה"}, {"title": "מהדורה"}])
+bot.ask_ai = real_ask
+assert names == ["מירוץ הכוכבים", "הישרדות"]  # "חדשות" לא בלוח כשם תוכנית
+assert bot.reality_on([{"title": "מירוץ הכוכבים - פרק 3"}], names)[0][0] == "מירוץ הכוכבים"
+rabbit = dict(good, id="w2", source_title="Iran talks", title="איתי שכטר הוא הזמר במסכה")
+msgs, _ = bot.render(now, [], None, {}, {"sport": [rabbit], "ent": [good], "ent_recap": [
+    {"label": "הזמר במסכה", "text": "הארנב נחשף: איתי שכטר", "ids": ["w2"]}],
+    "ent_tv_last": [{"title": "הזמר במסכה - הארנב נתפס"}], "ent_reality": ["הזמר במסכה"]})
+text = "\n".join(sum(msgs, []))
+assert "הארנב נחשף: איתי שכטר" in text and "איתי שכטר הוא הזמר במסכה" not in text  # בבלוק, לא כידיעה בספורט
 bot.FAILURES.clear()
 
 print("ok")
