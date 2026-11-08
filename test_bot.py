@@ -248,6 +248,18 @@ assert "• <b>הערב</b> — הכוכב הבא, עונה חדשה · קשת 1
 assert bot.clean_text("ריצ'רד לויד, גיטריסט טלוויז'ן, מת בגיל 75. הוא נאבק במחלה.", "ריצ'רד לויד, גיטריסט טלוויז'ן, מת בגיל 75") == "הוא נאבק במחלה."
 assert bot.clean_text("הבמאי מת. פרטים נוספים לא נמסרו בדיווח.") == "הבמאי מת."
 assert bot.clean_text("הכתבה מציינת ש-X.") == "הכתבה מציינת ש-X."  # הכל מטא — עדיף מאשר ריק
+# Google News 503 לרגע — מנסים שוב במקום לוותר על המקור
+class G:
+    def __init__(self, code):
+        self.status_code, self.content = code, b"ok"
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(self.status_code)
+answers = [G(503), G(200)]
+real_get, real_sleep = bot.requests.get, bot.time.sleep
+bot.requests.get, bot.time.sleep = (lambda *a, **k: answers.pop(0)), (lambda s: None)
+assert bot.fetch("https://news.google.com/x") == b"ok" and not answers
+bot.requests.get, bot.time.sleep = real_get, real_sleep
 bot.FAILURES.clear()
 
 print("ok")

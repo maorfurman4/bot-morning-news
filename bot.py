@@ -11,6 +11,7 @@ import json
 import os
 import re
 import sys
+import time
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
 from itertools import zip_longest
@@ -192,7 +193,11 @@ def fail(section: str, ex) -> None:
 ATOM = "{http://www.w3.org/2005/Atom}"
 
 def fetch(url: str) -> bytes:
-    resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+    for wait in (3, 8, None):  # Google News מחזיר לפעמים 503/429 לרגע — מחכים ומנסים שוב (08/11/2026)
+        resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+        if resp.status_code not in (429, 503) or wait is None:
+            break
+        time.sleep(wait)
     resp.raise_for_status()
     return resp.content
 
