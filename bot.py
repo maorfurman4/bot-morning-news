@@ -797,8 +797,9 @@ SHOW_NAMES = [_plain(x) for x in REALITY_SHOWS]
 PREMIERE = re.compile(r"פרק 1\b|פרק הבכורה|בכורה|עונה חדשה|פתיחת העונה")
 
 REALITY_PROMPT = """לפניך לוח שידורים (ערוצים 11, 12, 13). אילו מהתוכניות הן ריאליטי או תחרות טלוויזיה
-(למשל הישרדות, הזמר במסכה, האח הגדול, תוכניות שירה, בישול, ריקוד או היכרויות)? לא חדשות, לא סדרות דרמה או קומדיה,
-לא תוכניות אירוח, סאטירה או תעודה.
+(למשל הישרדות, הזמר במסכה, האח הגדול, תוכניות שירה, בישול, ריקוד או היכרויות)? ריאליטי = מתמודדים אמיתיים
+בתחרות, הדחה, מבחן או זוגיות. לא חדשות, לא סדרות דרמה או קומדיה, לא תוכניות אירוח, סאטירה או תעודה.
+השתמש בתיאור כדי להחליט; לא בטוח — אל תכלול.
 החזר JSON בלבד: {"reality": ["<שם התוכנית בלבד, בלי שם הפרק — כמו שהוא מופיע בלוח>"]}"""
 
 def reality_names(tv: list) -> list:
@@ -809,7 +810,8 @@ def reality_names(tv: list) -> list:
         try:
             got = ask_ai(REALITY_PROMPT, {"schedule": [{"title": x.get("title"), "description": (x.get("description") or "")[:120]}
                                                       for x in tv]}).get("reality") or []
-            names = [_plain(n) for n in got if isinstance(n, str) and _plain(n) and any(_plain(n) in t for t in titles)]
+            got = [_plain(n).split(" - ")[0].strip() for n in got if isinstance(n, str)]  # בלי שם הפרק
+            names = [n for n in got if n and any(n in t for t in titles)]
         except Exception as ex:
             fail("זיהוי ריאליטי בלוח השידורים", ex)
     known = [n for n in SHOW_NAMES if any(n in t for t in titles)]  # גיבוי ותוספת: הרשימה הידועה
@@ -1048,8 +1050,8 @@ def build() -> list:
                   + (RECAP_FORMAT.format(rule=RECAP[key][2]) if key in RECAP else ""),
                   {"articles": news[key], **({"results": results} if key == "sport" else {})})
             for key, (_, name, rule) in TOPICS.items()}
-    general, reality = split_reality(news["ent"])
-    jobs["ent"][1].update({"articles": general, "reality_articles": reality,
+    general, reality_items = split_reality(news["ent"])
+    jobs["ent"][1].update({"articles": general, "reality_articles": reality_items,
                            "aired_last_night": [x for _, x in reality_on(tv_last, reality)]})
     jobs["market"] = (RULES + MARKET_FORMAT, {
         "markets": [re.sub(r"<[^>]+>", "", r) for r in market_rows],
