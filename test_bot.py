@@ -283,6 +283,13 @@ assert "הארנב נחשף: איתי שכטר" in text and "איתי שכטר �
 assert bot.clean_text(["אבי שושן הודח.", "עוד"]) == "אבי שושן הודח. עוד"
 assert bot.recap_block("ent", [{"label": ["הישרדות"], "text": ["אבי שושן הודח"], "ids": ["w1"]}]).count("•") == 1
 assert "<b>" in bot.article(dict(good, title=["א"], bottom_line=["ב"]))
+# 📈 שוק ההון: נקודה בלי מקף שני; מקורות — כל מקור פעם אחת בשם קצר, עד 3
+assert bot.short_source("Globes - Israel Business News") == bot.short_source("גלובס") == "גלובס"
+assert bot.short_source("MarketWatch") == "MarketWatch"
+ai = {"market_why": [{"label": "תל אביב", "text": "ת\"א-35 זינק 3% — החזק מאז מרץ", "ids": ["w1"]}]}
+pub, _ = bot.render(now, ["🟢 a"], None, {}, ai, channel=True)
+mkt = "\n".join(next(m for m in pub if any("שוק ההון" in b for b in m[:2])))
+assert "• <b>תל אביב</b> — ת&quot;א-35 זינק 3%, החזק מאז מרץ" in mkt
 bot.FAILURES.clear()
 
 print("ok")

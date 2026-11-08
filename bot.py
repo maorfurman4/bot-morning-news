@@ -563,9 +563,9 @@ MARKET_FORMAT = """
 
 החזר JSON בלבד:
 {
-  "headline": "...",   // היום בשוק במשפט אחד חד (עד 15 מילים), כמו כותרת ראשית של מוסף כלכלי
+  "headline": "...",   // היום בשוק במשפט אחד פשוט, עד 8 מילים (למשל: "ת\"א זינקה 3%, וול סטריט מעורבת")
   "market_why": [{"label": "...", "text": "...", "ids": ["..."]}],
-      // אתמול: 2 הגורמים שהכי הזיזו את השוק. label — 1-3 מילים (למשל "הפד", "נפט", "דוחות טק"); text — משפט אחד, עד 20 מילים
+      // אתמול: 2 הגורמים שהכי הזיזו את השוק. label — 1-3 מילים (למשל "הפד", "נפט", "דוחות טק"); text — משפט אחד, עד 14 מילים
   "watch": [{"label": "...", "text": "...", "ids": ["..."]}],
       // קדימה: 2 האירועים או הסיכונים שעלולים לטלטל את השוק בימים הקרובים — ריבית, אינפלציה ותעסוקה, דוחות צפויים,
       // גאופוליטיקה, נפט. אותו פורמט. רק ממה שמופיע בכתבות
@@ -577,6 +577,8 @@ MARKET_FORMAT = """
 }
 אסור לחזור על אותו סיפור פעמיים: כל סיפור מופיע רק בחלק אחד — market_why (מה כבר קרה), watch (מה צפוי)
 או market_news (סיפור שלא הוזכר בשניהם). אם אין סיפור חדש — market_news ריק.
+כתיבה: עברית פשוטה וברורה, כמו כתב כלכלי טוב שמסביר לחבר. כל text — משפט אחד קצר, בלי מקף נוסף בתוכו, בלי לחזור
+על ה-label, בלי ז'רגון ובלי מילים באנגלית בתעתיק ("קורלציות", "רפרובשן", "סנטימנט") — במילים רגילות.
 """
 
 ITEMS = {}  # id → כתבה, כדי שהקישורים והמקורות יגיעו מהנתונים ולא מה-AI
@@ -914,6 +916,12 @@ def recap_block(key: str, rows: list, results: list = (), he: dict = {}, shown: 
                 out.append(f"• <b>הערב</b> — {esc(name)}, עונה חדשה{esc(where)}")
     return f"{icon} <b>{title}</b>\n" + "\n".join(out) if out else ""
 
+SOURCE_NAMES = [(r"globes|גלובס", "גלובס"), (r"calcalist|כלכליסט", "כלכליסט"), (r"themarker|דה ?מרקר", "TheMarker"),
+                (r"ynet", "ynet"), (r"yahoo", "Yahoo Finance")]
+
+def short_source(name: str) -> str:
+    return next((short for pat, short in SOURCE_NAMES if re.search(pat, name, re.I)), name.split(" - ")[0].strip())
+
 def topic_blocks(key: str, ai: dict, shown: set | None = None) -> list:
     """בלוק "אמש" (אם יש) + עד 5 ידיעות; כתבה שכבר בבלוק או כבר הוצגה (גם בנושא אחר) — מדלגים לבאה בתור."""
     seen = shown if shown is not None else set()
@@ -948,15 +956,18 @@ def render(today: datetime, market_rows: list, close_date, holdings: dict, ai: d
         out = []
         for w in (entries or [])[:2]:
             used.extend(i for i in w.get("ids") or [] if i in ITEMS and i not in used)
-            if w.get("text"):
-                out.append(f"• <b>{esc(w['label'])}</b> — {esc(w['text'])}" if w.get("label") else f"• {esc(w['text'])}")
+            text = re.sub(r"\s+[—–]\s+", ", ", clean_text(w.get("text")))  # מקף אחד בשורה — רק אחרי הכותרת
+            label = as_text(w.get("label"))
+            if text:
+                out.append(f"• <b>{esc(label)}</b> — {esc(text)}" if label else f"• {esc(text)}")
         return out
     why, watch = notes(ai.get("market_why")), notes(ai.get("watch"))
     seen = {ITEMS[i]["link"] for i in used}
     news = [e for e in ai.get("market_news") or [] if (resolve(e) or {}).get("link") not in seen][:max(0, 5 - len(why) - len(watch))]
     sources = {}
-    for i in used:
-        sources.setdefault(ITEMS[i]["source"], ITEMS[i]["link"])
+    for i in used:  # "Globes - Israel Business News" ו"גלובס" — אותו מקור, שם קצר
+        sources.setdefault(short_source(ITEMS[i]["source"]), ITEMS[i]["link"])
+    sources = dict(list(sources.items())[:3])
 
     market = [
         f"🧭 <b>{esc(ai['headline'])}</b>" if ai.get("headline") else "",
