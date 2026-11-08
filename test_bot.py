@@ -265,6 +265,19 @@ assert bot.short_fact("הישרדות", "הישרדות: אבי שושן הוד�
 assert bot.short_fact("הזמר במסכה", "הזמר במסכה: הארנב נתפס ונחשף כפי שנרשם בלוח השידורים.") == "הארנב נתפס ונחשף"
 assert bot.short_fact("הזמר במסכה", "הארנב נחשף: זו נועה קירל") == "הארנב נחשף: זו נועה קירל"
 assert bot.short_fact("הישרדות", "אבי שושן הודח. הוא אמר שזה כואב.") == "אבי שושן הודח"
+# 📺 כל ריאליטי: זיהוי מהלוח ע"י AI (רק שמות שבאמת בלוח, + הרשימה הידועה); הבלוק שומר לעצמו את הכתבות שלו
+real_ask = bot.ask_ai
+bot.ask_ai = lambda s, p: {"reality": ["מירוץ הכוכבים", "תוכנית שלא בלוח", "חדשות"]}
+names = bot.reality_names([{"title": "מירוץ הכוכבים - פרק 3", "description": ""}, {"title": "הישרדות - הדחה"}, {"title": "מהדורה"}])
+bot.ask_ai = real_ask
+assert names == ["מירוץ הכוכבים", "הישרדות"]  # "חדשות" לא בלוח כשם תוכנית
+assert bot.reality_on([{"title": "מירוץ הכוכבים - פרק 3"}], names)[0][0] == "מירוץ הכוכבים"
+rabbit = dict(good, id="w2", source_title="Iran talks", title="איתי שכטר הוא הזמר במסכה")
+msgs, _ = bot.render(now, [], None, {}, {"sport": [rabbit], "ent": [good], "ent_recap": [
+    {"label": "הזמר במסכה", "text": "הארנב נחשף: איתי שכטר", "ids": ["w2"]}],
+    "ent_tv_last": [{"title": "הזמר במסכה - הארנב נתפס"}], "ent_reality": ["הזמר במסכה"]})
+text = "\n".join(sum(msgs, []))
+assert "הארנב נחשף: איתי שכטר" in text and "איתי שכטר הוא הזמר במסכה" not in text  # בבלוק, לא כידיעה בספורט
 bot.FAILURES.clear()
 
 print("ok")
