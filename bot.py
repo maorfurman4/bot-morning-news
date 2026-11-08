@@ -563,9 +563,9 @@ MARKET_FORMAT = """
 
 החזר JSON בלבד:
 {
-  "headline": "...",   // היום בשוק במשפט אחד חד (עד 15 מילים), כמו כותרת ראשית של מוסף כלכלי
+  "headline": "...",   // היום בשוק במשפט אחד פשוט, עד 8 מילים (למשל: "ת\"א זינקה 3%, וול סטריט מעורבת")
   "market_why": [{"label": "...", "text": "...", "ids": ["..."]}],
-      // אתמול: 2 הגורמים שהכי הזיזו את השוק. label — 1-3 מילים (למשל "הפד", "נפט", "דוחות טק"); text — משפט אחד, עד 20 מילים
+      // אתמול: 2 הגורמים שהכי הזיזו את השוק. label — 1-3 מילים (למשל "הפד", "נפט", "דוחות טק"); text — משפט אחד, עד 14 מילים
   "watch": [{"label": "...", "text": "...", "ids": ["..."]}],
       // קדימה: 2 האירועים או הסיכונים שעלולים לטלטל את השוק בימים הקרובים — ריבית, אינפלציה ותעסוקה, דוחות צפויים,
       // גאופוליטיקה, נפט. אותו פורמט. רק ממה שמופיע בכתבות
@@ -577,6 +577,8 @@ MARKET_FORMAT = """
 }
 אסור לחזור על אותו סיפור פעמיים: כל סיפור מופיע רק בחלק אחד — market_why (מה כבר קרה), watch (מה צפוי)
 או market_news (סיפור שלא הוזכר בשניהם). אם אין סיפור חדש — market_news ריק.
+כתיבה: עברית פשוטה וברורה, כמו כתב כלכלי טוב שמסביר לחבר. כל text — משפט אחד קצר, בלי מקף נוסף בתוכו, בלי לחזור
+על ה-label, בלי ז'רגון ובלי מילים באנגלית בתעתיק ("קורלציות", "רפרובשן", "סנטימנט") — במילים רגילות.
 """
 
 ITEMS = {}  # id → כתבה, כדי שהקישורים והמקורות יגיעו מהנתונים ולא מה-AI
@@ -770,16 +772,27 @@ def as_text(v) -> str:
         return " ".join(as_text(x) for x in v)
     return "" if v is None else str(v)
 
+JARGON = [(r"\bCFO\b", 'סמנכ"ל הכספים'), (r"\bCEO\b", 'מנכ"ל'), (r"לוק[\s־-]?אפ", "תום תקופת החסימה"),
+          (r"\bה?סשן\b", "יום המסחר"), (r"\bהמפגש(?= (החזק|החלש|הטוב|הגרוע))", "יום המסחר"),
+          (r"\bה?סנטימנט\b", "מצב הרוח בשוק")]
+
+def plain_hebrew(text) -> str:
+    """ז'רגון ותרגומים עקומים → עברית ("CFO" → סמנכ"ל הכספים, "לוק-אפ" → תום תקופת החסימה) — ה-AI לא תמיד מקשיב."""
+    text = as_text(text)
+    for pat, he in JARGON:
+        text = re.sub(pat, he, text)
+    return text
+
 def clean_text(text, title="") -> str:
     """מוחק משפטים שמדברים על הכתבה ("הכתבה רושמת...", "פרטים נוספים לא נמסרו"), ומשפט ראשון שרק חוזר על הכותרת."""
-    text, title = as_text(text), as_text(title)
+    text, title = plain_hebrew(text), plain_hebrew(title)
     parts = [p.strip() for p in re.split(r"(?<=[.!?])\s+", text) if p.strip()]
     parts = [re.sub(r"^המשמעות(\s+\S+)?:\s*", "", p) for p in parts]  # "המשמעות המיידית: ..." → בלי התווית
     kept = [p for p in parts if not META.search(p)] or parts
     if title and len(kept) > 1:
         tw = set(re.findall(r"\w{3,}", title))
         fw = set(re.findall(r"\w{3,}", kept[0]))
-        if tw and len(tw & fw) >= 0.6 * len(tw):
+        if tw and len(tw & fw) >= 0.8 * len(tw):  # רק משפט שכמעט זהה לכותרת (ב-0.6 נמחקו גם עובדות)
             kept = kept[1:]  # גוף שחוזר על הכותרת — מתחילים ממה שחדש
     return " ".join(kept)
 
@@ -792,7 +805,7 @@ def article(e: dict, need_id: bool = True, light: bool = False) -> str:
         print(f"🚫 dropped (no matching article): id={e.get('id')} source_title={e.get('source_title')!r}")
         return ""  # פריט שלא מתאים לכתבה אמיתית — לא מציגים
     emoji = re.sub("[\U0001F1E6-\U0001F1FF]", "", e.get("emoji") or "")  # בלי דגלים
-    out = f"🔹 <b>{esc(emoji) + ' ' if emoji.strip() else ''}{esc(e['title'])}</b>\n" + (
+    out = f"🔹 <b>{esc(emoji) + ' ' if emoji.strip() else ''}{esc(plain_hebrew(e['title']))}</b>\n" + (
         esc(clean_text(e["bottom_line"], e["title"])) if light
         else f"💡 <i>השורה התחתונה:</i> {esc(clean_text(e['bottom_line'], e['title']))}")
     if item:
@@ -914,6 +927,12 @@ def recap_block(key: str, rows: list, results: list = (), he: dict = {}, shown: 
                 out.append(f"• <b>הערב</b> — {esc(name)}, עונה חדשה{esc(where)}")
     return f"{icon} <b>{title}</b>\n" + "\n".join(out) if out else ""
 
+SOURCE_NAMES = [(r"globes|גלובס", "גלובס"), (r"calcalist|כלכליסט", "כלכליסט"), (r"themarker|דה ?מרקר", "TheMarker"),
+                (r"ynet", "ynet"), (r"yahoo", "Yahoo")]
+
+def short_source(name: str) -> str:
+    return next((short for pat, short in SOURCE_NAMES if re.search(pat, name, re.I)), name.split(" - ")[0].strip())
+
 def topic_blocks(key: str, ai: dict, shown: set | None = None) -> list:
     """בלוק "אמש" (אם יש) + עד 5 ידיעות; כתבה שכבר בבלוק או כבר הוצגה (גם בנושא אחר) — מדלגים לבאה בתור."""
     seen = shown if shown is not None else set()
@@ -948,18 +967,24 @@ def render(today: datetime, market_rows: list, close_date, holdings: dict, ai: d
         out = []
         for w in (entries or [])[:2]:
             used.extend(i for i in w.get("ids") or [] if i in ITEMS and i not in used)
-            if w.get("text"):
-                out.append(f"• <b>{esc(w['label'])}</b> — {esc(w['text'])}" if w.get("label") else f"• {esc(w['text'])}")
+            text = re.sub(r"\s+[—–]\s+", ", ", clean_text(w.get("text")))  # מקף אחד בשורה — רק אחרי הכותרת
+            label = plain_hebrew(w.get("label"))
+            if text:
+                out.append(f"• <b>{esc(label)}</b> — {esc(text)}" if label else f"• {esc(text)}")
         return out
-    why, watch = notes(ai.get("market_why")), notes(ai.get("watch"))
+    words = lambda w: set(re.findall(r"\w{4,}", plain_hebrew(w.get("label")).lower()))
+    watch_words = set().union(*[words(w) for w in (ai.get("watch") or [])[:2]])
+    why_entries = [w for w in ai.get("market_why") or [] if not words(w) & watch_words]  # "אינפלציה" פעמיים — רק ב"לשים לב"
+    why, watch = notes(why_entries), notes(ai.get("watch"))
     seen = {ITEMS[i]["link"] for i in used}
     news = [e for e in ai.get("market_news") or [] if (resolve(e) or {}).get("link") not in seen][:max(0, 5 - len(why) - len(watch))]
     sources = {}
-    for i in used:
-        sources.setdefault(ITEMS[i]["source"], ITEMS[i]["link"])
+    for i in used:  # "Globes - Israel Business News" ו"גלובס" — אותו מקור, שם קצר
+        sources.setdefault(short_source(ITEMS[i]["source"]), ITEMS[i]["link"])
+    sources = dict(list(sources.items())[:3])
 
     market = [
-        f"🧭 <b>{esc(ai['headline'])}</b>" if ai.get("headline") else "",
+        f"🧭 <b>{esc(plain_hebrew(ai['headline']))}</b>" if ai.get("headline") else "",
         "📊 <b>סגירה" + (f" {close_date:%d/%m}" if close_date else "") + "</b>\n<pre>" + "\n".join(market_rows) + "</pre>"
         if market_rows else "",
         "🔎 <b>מה הזיז את השוק</b>\n" + "\n".join(why) if why else "",
@@ -1113,7 +1138,7 @@ if __name__ == "__main__":
         raise
     only = next((a.split("=", 1)[1].split(",") for a in sys.argv if a.startswith("--only=")), None)
     if only:  # בדיקה: רק הנושאים האלה, ורק אליך בפרטי — הערוץ לא מקבל כלום
-        heads = [f"{TOPICS[k][0]} <b>{TOPICS[k][1]}</b>" for k in only]
+        heads = [f"{TOPICS[k][0]} <b>{TOPICS[k][1]}</b>" if k in TOPICS else "📈 <b>שוק ההון</b>" for k in only]
         public, private, CHANNEL_ID = [m for m in public if any(h in m for h in heads)], [], ""
     for msg, chat in [(m, CHANNEL_ID or CHAT_ID) for m in public] + [(m, CHAT_ID) for m in private]:
         if "--dry-run" in sys.argv:

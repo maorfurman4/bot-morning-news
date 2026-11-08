@@ -247,6 +247,9 @@ assert "• <b>הערב</b> — הכוכב הבא, עונה חדשה · קשת 1
 # כתיבה נקייה: בלי משפטים על הכתבה, ובלי משפט ראשון שחוזר על הכותרת
 assert bot.clean_text("ריצ'רד לויד, גיטריסט טלוויז'ן, מת בגיל 75. הוא נאבק במחלה.", "ריצ'רד לויד, גיטריסט טלוויז'ן, מת בגיל 75") == "הוא נאבק במחלה."
 assert bot.clean_text("הבמאי מת. פרטים נוספים לא נמסרו בדיווח.") == "הבמאי מת."
+# משפט שרק דומה לכותרת (ולא זהה) נשאר — הוא נושא את העובדה
+liberman = "ליברמן אמר שאינו מנסה להכשיל והבהיר את עמדותיו לגבי פשרות בחוק הגיוס. דבריו משפיעים על המו\"מ."
+assert bot.clean_text(liberman, "ליברמן מבהיר: לא מנסה להכשיל — על פשרות בגיוס").startswith("ליברמן אמר")
 assert bot.clean_text("ההצגה בוטלה. המשמעות המיידית: התפקיד נדחה.") == "ההצגה בוטלה. התפקיד נדחה."
 assert bot.clean_text("הכתבה מציינת ש-X.") == "הכתבה מציינת ש-X."  # הכל מטא — עדיף מאשר ריק
 # Google News 503 לרגע — מנסים שוב במקום לוותר על המקור
@@ -283,6 +286,24 @@ assert "הארנב נחשף: איתי שכטר" in text and "איתי שכטר �
 assert bot.clean_text(["אבי שושן הודח.", "עוד"]) == "אבי שושן הודח. עוד"
 assert bot.recap_block("ent", [{"label": ["הישרדות"], "text": ["אבי שושן הודח"], "ids": ["w1"]}]).count("•") == 1
 assert "<b>" in bot.article(dict(good, title=["א"], bottom_line=["ב"]))
+# 📈 שוק ההון: נקודה בלי מקף שני; מקורות — כל מקור פעם אחת בשם קצר, עד 3
+assert bot.short_source("Globes - Israel Business News") == bot.short_source("גלובס") == "גלובס"
+assert bot.short_source("MarketWatch") == "MarketWatch"
+ai = {"market_why": [{"label": "תל אביב", "text": "ת\"א-35 זינק 3% — החזק מאז מרץ", "ids": ["w1"]}]}
+pub, _ = bot.render(now, ["🟢 a"], None, {}, ai, channel=True)
+mkt = "\n".join(next(m for m in pub if any("שוק ההון" in b for b in m[:2])))
+assert "• <b>תל אביב</b> — ת&quot;א-35 זינק 3%, החזק מאז מרץ" in mkt
+# 🔤 ז'רגון → עברית בכל הבריף; בשוק — נושא אחד בחלק אחד
+assert bot.plain_hebrew("CFO של Binance עוזב; לוק-אפ SpaceX; המפגש החזק ביותר; הסשן נסגר") == \
+    'סמנכ"ל הכספים של Binance עוזב; תום תקופת החסימה SpaceX; יום המסחר החזק ביותר; יום המסחר נסגר'
+assert bot.plain_hebrew("המפגש עם השר") == "המפגש עם השר"  # "מפגש" רגיל לא נוגעים
+assert "סמנכ&quot;ל הכספים" in bot.article(dict(good, title="CFO עוזב"))
+ai = {"market_why": [{"label": "אינפלציה", "text": "עונת הדיווחים", "ids": []}, {"label": "ת\"א", "text": "זינוק", "ids": []}],
+      "watch": [{"label": "נתוני אינפלציה", "text": "בקרוב", "ids": []}]}
+pub, _ = bot.render(now, ["🟢 a"], None, {}, ai, channel=True)
+mkt = "\n".join(next(m for m in pub if any("שוק ההון" in b for b in m[:2])))
+assert "עונת הדיווחים" not in mkt and "בקרוב" in mkt and "זינוק" in mkt
+assert bot.short_source("Yahoo Finance") == "Yahoo"
 bot.FAILURES.clear()
 
 print("ok")
