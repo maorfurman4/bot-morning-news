@@ -240,7 +240,7 @@ rows = [{"label": "הישרדות", "text": "אבי שושן הודח. הכתב�
         {"label": "רוקדים עם כוכבים", "text": "כתבות עוסקות בזכרונות", "ids": ["w1"]},
         {"label": "הערב", "text": "הארץ המובטחת — פרק 1 (בכורה/פרק ראשון)", "ids": []}]
 block = bot.recap_block("ent", rows, tv_last=last, tv_tonight=tonight)
-assert "• <b>הישרדות</b> — אבי שושן הודח. ·" in block  # משפט על "הכתבה" נמחק
+assert "• <b>הישרדות</b> — אבי שושן הודח ·" in block  # משפט על "הכתבה" נמחק
 assert "רוקדים" not in block and "הארץ המובטחת" not in block  # לא שודר אמש / לא ריאליטי
 assert "• <b>הזמר במסכה</b> — הארנב נתפס ונחשף" in block  # שודר, אין שורה — מהלוח
 assert "• <b>הערב</b> — הכוכב הבא, עונה חדשה · קשת 12, 21:00" in block
@@ -260,6 +260,11 @@ real_get, real_sleep = bot.requests.get, bot.time.sleep
 bot.requests.get, bot.time.sleep = (lambda *a, **k: answers.pop(0)), (lambda s: None)
 assert bot.fetch("https://news.google.com/x") == b"ok" and not answers
 bot.requests.get, bot.time.sleep = real_get, real_sleep
+# 📺 שורה בבלוק הריאליטי — רק העובדה
+assert bot.short_fact("הישרדות", "הישרדות: אבי שושן הודח; הוא הפסיד מעל מיליון שקל.") == "אבי שושן הודח"
+assert bot.short_fact("הזמר במסכה", "הזמר במסכה: הארנב נתפס ונחשף כפי שנרשם בלוח השידורים.") == "הארנב נתפס ונחשף"
+assert bot.short_fact("הזמר במסכה", "הארנב נחשף: זו נועה קירל") == "הארנב נחשף: זו נועה קירל"
+assert bot.short_fact("הישרדות", "אבי שושן הודח. הוא אמר שזה כואב.") == "אבי שושן הודח"
 bot.FAILURES.clear()
 
 print("ok")

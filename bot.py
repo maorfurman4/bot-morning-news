@@ -547,7 +547,8 @@ RECAP = {
             "לעולם לא להסיק מתיאור הפרק בלוח (\"פרק הדחה משוגע\" לא אומר מי הודח). text — עד 20 מילים, מה שקרה ותו לא. אם aired_last_night ריק — "
             "כל ריאליטי שמדברים עליו ב-24 השעות האחרונות (פרק של אתמול, הדחה, דרמה, ריב עם השופטים): "
             "found_by_search = על איזו תוכנית חיפשנו כשהכתבה נמצאה — רמז, לא ודאות. "
-            "label = שם התוכנית, text = מה שהכי מדברים עליו — קודם כל מי הודח, נחשף או ניצח. "
+            "label = שם התוכנית, text = רק העובדה, עד 8 מילים, בלי הסברים ובלי לחזור על שם התוכנית: "
+            "\"אבי שושן הודח\", ובזמר במסכה — מי נחשף מאחורי איזו מסכה: \"הארנב נחשף: <השם>\" (השם — רק אם כתוב בכתבה). "
             "תוכנית שאין עליה כתבה מה-24 שעות האחרונות ולא בלוח — לא להזכיר. "
             "ל-recap: reality_articles (כתבות מחיפושי הריאליטי) והלוח. ה-items — רק מ-articles: בידור וסלבס, "
             "לא הריאליטי שכבר בבלוק (כדי שיהיו 5 ידיעות נוספות). שורת \"הערב\" נבנית בקוד — לא לכתוב אותה."),
@@ -799,6 +800,17 @@ def reality_on(tv: list) -> list:
     """(שם התוכנית, פריט בלוח) לכל ריאליטי מוכר בלוח."""
     return [(name, x) for x in tv for name in SHOW_NAMES if name in _plain(x.get("title"))][:8]
 
+def short_fact(label: str, text: str) -> str:
+    """שורה בבלוק הריאליטי = רק העובדה ("אבי שושן הודח", "הארנב נחשף: X"): בלי שם התוכנית שוב, בלי הסבר
+    אחרי ';' או אחרי המשפט הראשון, ובלי "כפי שנרשם בלוח השידורים"."""
+    t = (text or "").strip()
+    name = _plain(label)
+    if name and _plain(t).startswith(name):  # "הישרדות: אבי שושן הודח" → "אבי שושן הודח"
+        t = re.sub(r"^\s*[\"'״׳]?" + re.escape(label.strip('"\'״׳')) + r"[\"'״׳]?\s*[:—–-]\s*", "", t)
+    t = re.split(r";|(?<=[.!?])\s", t)[0]
+    t = re.sub(r"\s*(כפי ש(נרשם|מופיע|נכתב) ב?לוח( השידורים)?|לפי (ה)?לוח( השידורים)?|בלוח השידורים)", "", t)
+    return t.strip(" .")
+
 def schedule_line(name: str, x: dict) -> str:
     """שורה מהלוח עצמו, כשאין כתבה טרייה: מה שכתוב בכותרת הפרק ("הארנב נתפס ונחשף"), בלי ניחושים."""
     title = x.get("title") or ""
@@ -828,7 +840,9 @@ def recap_rows(key: str, rows: list, results: list = (), shown: set = frozenset(
             continue  # רק שורה שמבוססת על כתבה אמיתית או על תוכנית שבאמת בלוח השידורים
         if not (label and text):
             continue
-        r = dict(r, text=text)
+        r = dict(r, text=short_fact(label, text) if key == "ent" else text)
+        if not r["text"]:
+            continue
         show = re.sub(r"[\"'״׳]", "", label).split(" - ")[0].split(" (")[0].strip()
         if label != "הערב" and any(show.startswith(x) or x.startswith(show) for x in shows):
             continue  # שורה אחת לכל תוכנית
