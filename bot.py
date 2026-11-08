@@ -767,6 +767,7 @@ META = re.compile(r"הכתבה|בכתבה|הדיווח|בדיווח|לפי הד�
 def clean_text(text: str, title: str = "") -> str:
     """מוחק משפטים שמדברים על הכתבה ("הכתבה רושמת...", "פרטים נוספים לא נמסרו"), ומשפט ראשון שרק חוזר על הכותרת."""
     parts = [p.strip() for p in re.split(r"(?<=[.!?])\s+", text or "") if p.strip()]
+    parts = [re.sub(r"^המשמעות(\s+\S+)?:\s*", "", p) for p in parts]  # "המשמעות המיידית: ..." → בלי התווית
     kept = [p for p in parts if not META.search(p)] or parts
     if title and len(kept) > 1:
         tw = set(re.findall(r"\w{3,}", title))
