@@ -795,7 +795,7 @@ def clean_text(text, title="") -> str:
     """מוחק משפטים שמדברים על הכתבה ("הכתבה רושמת...", "פרטים נוספים לא נמסרו"), ומשפט ראשון שרק חוזר על הכותרת."""
     text, title = plain_hebrew(text), plain_hebrew(title)
     parts = [p.strip() for p in re.split(r"(?<=[.!?])\s+", text) if p.strip()]
-    parts = [re.sub(r"^המשמעות(\s+\S+)?:\s*", "", p) for p in parts]  # "המשמעות המיידית: ..." → בלי התווית
+    parts = [re.sub(r"^המשמעות(\s+(?![—–-])\S+)?\s*[:—–-]\s*", "", p) for p in parts]  # "המשמעות המיידית:" / "המשמעות —" → בלי התווית
     kept = [p for p in parts if not META.search(p)] or parts
     if title and len(kept) > 1:
         tw = set(re.findall(r"\w{3,}", title))
