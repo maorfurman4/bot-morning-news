@@ -312,6 +312,8 @@ assert bot.game_line({"team1": "הפועל ירושלים", "score1": 65, "team2
 assert bot.game_line({"team1": "הפועל ירושלים", "score1": 59, "team2": "העמק", "score2": 65, "winner": "הפועל ירושלים"}) == ""
 assert bot.game_line({"team1": "א", "score1": 1, "team2": "ב", "score2": 1, "winner": "תיקו"}) == "א 1, ב 1"
 assert bot.game_line({"team1": "א", "score1": "x"}) == ""
+assert bot.game_line({"team1": "הפועל ת\"א", "team2": "הפועל ב\"ש", "score1": None, "score2": None, "winner": "הפועל ת\"א"}) == 'הפועל ת"א ניצחה את הפועל ב"ש'
+assert bot.game_line({"team1": "א", "team2": "ב", "winner": "ג"}) == ""  # מנצחת שלא משחקת — לא מציגים
 two = bot.recap_block("sport", [{"label": "ליגת העל", "team1": "מכבי חיפה", "score1": 2, "team2": "בני סכנין", "score2": 0, "winner": "מכבי חיפה", "ids": ["w1"]},
                                 {"label": "ליגת העל", "team1": "הפועל ת\"א", "score1": 1, "team2": "הפועל ב\"ש", "score2": 0, "winner": "הפועל ת\"א", "ids": ["w2"]}])
 assert two.count("• <b>ליגת העל</b>") == 2

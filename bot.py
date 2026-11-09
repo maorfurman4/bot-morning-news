@@ -537,7 +537,8 @@ RECAP = {
               "ב-recap — המשחקים החשובים האחרים מאמש: קבוצות ישראליות באירופה (יורוליג, יורוקאפ, מפעלי אירופה בכדורגל), משחקי צמרת "
               "בליגת העל, נבחרת ישראל; אבדיה וישראלים בחו\"ל — רק אם היה משחק מטורף או חדשה מרהיבה. "
               "label = המפעל בלבד: יורוליג / יורוקאפ / ליגת האלופות / הליגה האירופית / הקונפרנס ליג / ליגת העל / NBA / נבחרת "
-              "(ישראלי בחו\"ל — לפי המפעל של הקבוצה שלו). לכל משחק: team1, score1, team2, score2 (מספרים, בדיוק כמו בכתבה), "
+              "(ישראלי בחו\"ל — לפי המפעל של הקבוצה שלו). לכל משחק: team1, team2, score1, score2 (מספרים, בדיוק כמו בכתבה — "
+              "ואם התוצאה לא כתובה בכתבה: null), "
               "winner = שם הקבוצה שניצחה לפי הכתבה (או \"תיקו\"). שמות קבוצות בעברית. text לא צריך — השורה נבנית בקוד. "
               "רק משחקים עם קבוצה או שחקן ישראלי. בלי משחקים סתמיים. "
               "וגם \"he_names\": {\"<שם קבוצה באנגלית מ-results>\": \"<השם המקובל בעברית>\"} לכל קבוצה ב-results"),
@@ -876,20 +877,22 @@ def in_tv(label: str, tv: list) -> bool:
     return bool(name) and any(name in re.sub(r"[\"'״׳]", "", t) for t in tv)
 
 def game_line(r: dict) -> str:
-    """שורת משחק מנתונים: המנצחת קודם ("הפועל ירושלים 65, העמק 59"). winner שלא מתאים לתוצאה = מספרים הפוכים → ריק."""
-    try:
-        s1, s2 = int(r.get("score1")), int(r.get("score2"))
-    except (TypeError, ValueError):
-        return ""
-    t1, t2, w = (_plain(as_text(r.get(k))) for k in ("team1", "team2", "winner"))
+    """שורת משחק מנתונים: המנצחת קודם ("הפועל ירושלים 65, העמק 59"); בלי תוצאה בכתבה — "X ניצחה את Y".
+    winner שלא מתאים לתוצאה = מספרים הפוכים → ריק (הפועל י-ם "59, העמק 65", 09/11/2026)."""
+    t1, t2, w = (as_text(r.get(k)).strip() for k in ("team1", "team2", "winner"))
+    same = lambda a, b: bool(_plain(a)) and (_plain(a) in _plain(b) or _plain(b) in _plain(a))
     if not (t1 and t2):
         return ""
+    try:
+        s1, s2 = int(r.get("score1")), int(r.get("score2"))
+    except (TypeError, ValueError):  # אין תוצאה בכתבה — רק מי ניצח
+        if same(w, t1) or same(w, t2):
+            return f"{t1} ניצחה את {t2}" if same(w, t1) else f"{t2} ניצחה את {t1}"
+        return f"{t1} ו{t2} סיימו בתיקו" if _plain(w) == "תיקו" else ""
     if s1 == s2:
         return f"{t1} {s1}, {t2} {s2}"
     (hi, hs), (lo, ls) = ((t1, s1), (t2, s2)) if s1 > s2 else ((t2, s2), (t1, s1))
-    if not w or not (w in hi or hi in w):
-        return ""  # בלי מנצחת או מנצחת עם פחות נקודות — לא מציגים תוצאה שאולי הפוכה (הפועל י-ם "59, העמק 65", 09/11/2026)
-    return f"{hi} {hs}, {lo} {ls}"
+    return f"{hi} {hs}, {lo} {ls}" if same(w, hi) else ""
 
 def recap_rows(key: str, rows: list, results: list = (), shown: set = frozenset(),
                tv_last: list = (), tv_tonight: list = (), names: list = ()) -> list:
