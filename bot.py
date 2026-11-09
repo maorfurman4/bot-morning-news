@@ -863,7 +863,8 @@ def short_fact(label: str, text: str) -> str:
     t = re.sub(r"\s*(כפי ש(נרשם|מופיע|נכתב) ב?לוח( השידורים)?|לפי (ה)?לוח( השידורים)?|בלוח השידורים)", "", t)
     return t.strip(" .")
 
-OUTCOME = re.compile(r"הודח|הודחה|הודחו|נחשף|נחשפה|נחשפו|ניצח|ניצחה|זכה|זכתה|זכו|עלה|עלתה|עלו|נבחר|נבחרה|"
+OUTCOME = re.compile(r"הודח|הודחה|הודחו|נחשף|נחשפה|נחשפו|ניצח|ניצחה|זכה|זכתה|זכו|עלו? (?:ל)?שלב|עלתה (?:ל)?שלב|"
+                     r"עלו? לגמר|עלתה לגמר|נבחר|נבחרה|"
                      r"פרש|פרשה|עזב|עזבה|נתפס|נתפסה|הדחה|גמר|אלוף|אלופה")
 
 def schedule_line(name: str, x: dict) -> str:
@@ -899,33 +900,45 @@ def recap_rows(key: str, rows: list, results: list = (), shown: set = frozenset(
         ids = [i for i in r.get("ids") or [] if i in ITEMS]
         text = clean_text(r.get("text"))
         if key == "sport" and contradicts(text):
+            print(f"🚫 recap {key}: contradiction: {as_text(r.get('label'))[:20]!r} {as_text(r.get('text'))[:50]!r} ids={r.get('ids')}")
             continue  # "הפועל ירושלים 59, העמק 65 — הפועל ירושלים חגגה ניצחון": תוצאה הפוכה, לא מציגים
         label = plain_hebrew(r.get("label")).strip(" —–-")
         if label == "הערב":
+            print(f"🚫 recap {key}: premiere row: {as_text(r.get('label'))[:20]!r} {as_text(r.get('text'))[:50]!r} ids={r.get('ids')}")
             continue  # "הערב" נבנה בקוד מהלוח (premiere_line)
         if aired:
             if not any(n in _plain(label) or _plain(label) in n for n in aired):
+                print(f"🚫 recap {key}: not aired last night: {as_text(r.get('label'))[:20]!r} {as_text(r.get('text'))[:50]!r} ids={r.get('ids')}")
                 continue  # לא שודר אמש
         elif not ids and not in_tv(label, [x["title"] for x in tv_last_items(tv_last)]):
+            print(f"🚫 recap {key}: no article and not on TV: {as_text(r.get('label'))[:20]!r} {as_text(r.get('text'))[:50]!r} ids={r.get('ids')}")
             continue  # רק שורה שמבוססת על כתבה אמיתית או על תוכנית שבאמת בלוח השידורים
         if not (label and text):
+            print(f"🚫 recap {key}: empty label/text: {as_text(r.get('label'))[:20]!r}")
             continue
         r = dict(r, label=label, text=short_fact(label, text) if key == "ent" else text)
         if not r["text"]:
+            print(f"🚫 recap {key}: empty label/text: {as_text(r.get('label'))[:20]!r}")
             continue
         show = re.sub(r"[\"'״׳]", "", label).split(" - ")[0].split(" (")[0].strip()
         if key == "ent" and any(show.startswith(x) or x.startswith(show) for x in shows):
+            print(f"🚫 recap {key}: duplicate show: {as_text(r.get('label'))[:20]!r} {as_text(r.get('text'))[:50]!r} ids={r.get('ids')}")
             continue  # שורה אחת לכל תוכנית (בספורט — כמה משחקים באותו מפעל זה בסדר)
         if key == "ent" and not OUTCOME.search(r["text"]):
+            print(f"🚫 recap {key}: no outcome: {as_text(r.get('label'))[:20]!r} {as_text(r.get('text'))[:50]!r} ids={r.get('ids')}")
             continue  # רק תוצאה קונקרטית — מי הודח/נחשף/ניצח, לא תיאור של התוכנית
         shows.append(show)
         if any(all(n in re.findall(r"\d+", text) for n in re.findall(r"\d+", x["game"])[-2:]) for x in results):
+            print(f"🚫 recap {key}: same as official result: {as_text(r.get('label'))[:20]!r} {as_text(r.get('text'))[:50]!r} ids={r.get('ids')}")
             continue  # אותו משחק כמו תוצאה רשמית — כבר מוצג
         if key == "sport" and not ISRAELI_HE.search(text):
+            print(f"🚫 recap {key}: no Israeli team: {as_text(r.get('label'))[:20]!r} {as_text(r.get('text'))[:50]!r} ids={r.get('ids')}")
             continue  # בספורט — רק משחקים עם קבוצה או שחקן ישראלי
         if key != "sport" and SPORTY.search(text):
+            print(f"🚫 recap {key}: sporty in entertainment: {as_text(r.get('label'))[:20]!r} {as_text(r.get('text'))[:50]!r} ids={r.get('ids')}")
             continue  # ספורט לא נכנס לבלוק הבידור
         if ids and not aired and all(ITEMS[i]["link"] in shown for i in ids):
+            print(f"🚫 recap {key}: already shown: {as_text(r.get('label'))[:20]!r} {as_text(r.get('text'))[:50]!r} ids={r.get('ids')}")
             continue  # כבר הוצג בנושא קודם (בבלוק הריאליטי — הכתבות שמורות לו מראש, ראה render)
         out.append((r, ids))
     return out
