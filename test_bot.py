@@ -323,6 +323,14 @@ ai = {"market_why": [{"label": "🇨🇳 — אינפלציה במפעלים", "
 pub, _ = bot.render(now, ["🟢 a"], None, {}, ai, channel=True)
 mkt = "\n".join(next(m for m in pub if any("שוק ההון" in b for b in m[:2])))
 assert "• <b>אינפלציה במפעלים</b> — מחירי היצרן טיפסו" in mkt and "🇨🇳" not in mkt
+# ⚽ אותו כוכב — ידיעה אחת; הדוגמה ל-AI בבלוק הספורט — לפי השדות החדשים
+avd = bot.register("d", [dict(own, title=t, link=f"https://d/{n}", source=f"s{n}") for n, t in enumerate(
+    ["דני אבדיה מציג נתון מפתיע", "פורטלנד מאשימה את וומבניאמה אחרי מהלך עם אבדיה", "חסון וטיאנו אלופי ישראל"])])
+msgs, _ = bot.render(now, [], None, {}, {"sport": [dict(good, id=e["id"], source_title=e["title"], title=e["title"]) for e in avd]})
+sp = "\n".join(sum(msgs, []))
+assert sp.count("אבדיה") == 1 and "חסון וטיאנו" in sp
+assert "score1" in bot.RECAP_FORMAT.format(rule="x", fields=bot.RECAP_FIELDS["sport"])
+assert bot.short_source("Bloomberg.com") == "Bloomberg"
 bot.FAILURES.clear()
 
 print("ok")

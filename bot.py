@@ -555,8 +555,12 @@ RECAP = {
             "ל-recap: reality_articles (כתבות מחיפושי הריאליטי) והלוח. ה-items — רק מ-articles: בידור וסלבס, "
             "לא הריאליטי שכבר בבלוק (כדי שיהיו 5 ידיעות נוספות). שורת \"הערב\" נבנית בקוד — לא לכתוב אותה."),
 }
+RECAP_FIELDS = {  # הדוגמה ל-AI חייבת להתאים לכלל, אחרת הוא מתבלבל ולא מחזיר כלום (09/11/2026)
+    "sport": '{"label": "...", "team1": "...", "score1": 0, "team2": "...", "score2": 0, "winner": "...", "ids": ["..."]}',
+    "ent": '{"label": "...", "text": "...", "ids": ["..."]}',
+}
 RECAP_FORMAT = """
-בנוסף החזר באותו JSON: "recap": [{{"label": "...", "text": "...", "ids": ["..."]}}] — {rule}.
+בנוסף החזר באותו JSON: "recap": [{fields}] — {rule}.
 שורה קצרה לכל פריט, רק ממה שכתוב בכתבות; אם אין — רשימה ריקה. ה-items לא חוזרים על מה שב-recap.
 """
 
@@ -953,7 +957,7 @@ def recap_block(key: str, rows: list, results: list = (), he: dict = {}, shown: 
     return f"{icon} <b>{title}</b>\n" + "\n".join(out) if out else ""
 
 SOURCE_NAMES = [(r"globes|גלובס", "גלובס"), (r"calcalist|כלכליסט", "כלכליסט"), (r"themarker|דה ?מרקר", "TheMarker"),
-                (r"ynet", "ynet"), (r"yahoo", "Yahoo")]
+                (r"ynet", "ynet"), (r"yahoo", "Yahoo"), (r"bloomberg", "Bloomberg")]
 
 def short_source(name: str) -> str:
     return next((short for pat, short in SOURCE_NAMES if re.search(pat, name, re.I)), name.split(" - ")[0].strip())
@@ -971,8 +975,13 @@ def topic_blocks(key: str, ai: dict, shown: set | None = None) -> list:
         labels = [re.sub(r"[\"'״׳]", "", r["label"]) for r, _ in shown_rows if r["label"] != "הערב"]
     else:
         labels = []
-    out, per_source = [], {}
-    for e in ai.get(key) or []:
+    out, per_source, names = [], {}, set()
+    titles = [set(re.findall(r"\w{4,}", as_text(e.get("title")))) for e in ai.get(key) or []]
+    rare = {w for t in titles for w in t if sum(w in x for x in titles) <= 3} if key in LIGHT else set()
+    for e, words in zip(ai.get(key) or [], titles):
+        if words & rare & names:
+            continue  # עוד ידיעה על אותו שחקן/כוכב — אחת מספיקה
+
         item = resolve(e) or {}
         link, src = item.get("link"), short_source(item.get("source") or "")
         if link in seen or len(out) == 5 or (src and per_source.get(src, 0) >= 2):
@@ -983,6 +992,7 @@ def topic_blocks(key: str, ai: dict, shown: set | None = None) -> list:
             out.append(a)
             seen.add(link)
             per_source[src] = per_source.get(src, 0) + 1
+            names |= words & rare
     return [block, *out]
 
 def render(today: datetime, market_rows: list, close_date, holdings: dict, ai: dict, channel: bool = False,
@@ -1108,7 +1118,7 @@ def build() -> list:
     weekend = now.astimezone(IL_TZ).weekday() in (4, 5)  # שישי, שבת
     jobs = {key: (RULES + f"\nהנושא: {name} — {rule}\n" + (WEEKEND_ENT if key == "ent" and weekend else "")
                   + TOPIC_FORMAT.replace("עד 7", "10 (לפחות 8 אם יש)" if key in LIGHT else "עד 7")
-                  + (RECAP_FORMAT.format(rule=RECAP[key][2]) if key in RECAP else ""),
+                  + (RECAP_FORMAT.format(rule=RECAP[key][2], fields=RECAP_FIELDS[key]) if key in RECAP else ""),
                   {"articles": news[key], **({"results": results} if key == "sport" else {})})
             for key, (_, name, rule) in TOPICS.items()}
     general, reality_items = split_reality(news["ent"])
