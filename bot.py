@@ -538,9 +538,8 @@ RECAP = {
               "ב-recap — המשחקים החשובים האחרים מאמש: קבוצות ישראליות באירופה (יורוליג, יורוקאפ, מפעלי אירופה בכדורגל), משחקי צמרת "
               "בליגת העל, נבחרת ישראל; אבדיה וישראלים בחו\"ל — רק אם היה משחק מטורף או חדשה מרהיבה. "
               "label = המפעל בלבד: יורוליג / יורוקאפ / ליגת האלופות / הליגה האירופית / הקונפרנס ליג / ליגת העל / NBA / נבחרת "
-              "(ישראלי בחו\"ל — לפי המפעל של הקבוצה שלו). לכל משחק: team1, team2, score1, score2 (מספרים, בדיוק כמו בכתבה — "
-              "ואם התוצאה לא כתובה בכתבה: null), "
-              "winner = שם הקבוצה שניצחה לפי הכתבה (או \"תיקו\"). שמות קבוצות בעברית. text לא צריך — השורה נבנית בקוד. "
+              "(ישראלי בחו\"ל — לפי המפעל של הקבוצה שלו); text = בעברית, כל קבוצה עם התוצאה שלה (\"מכבי ת\"א 2, הפועל ב\"ש 1\"), "
+              "המנצחת קודם, + חצי משפט. "
               "רק משחקים עם קבוצה או שחקן ישראלי. בלי משחקים סתמיים. "
               "וגם \"he_names\": {\"<שם קבוצה באנגלית מ-results>\": \"<השם המקובל בעברית>\"} לכל קבוצה ב-results"),
     "ent": ("📺", "אמש בריאליטי",
@@ -558,7 +557,7 @@ RECAP = {
             "לא הריאליטי שכבר בבלוק (כדי שיהיו 5 ידיעות נוספות). שורת \"הערב\" נבנית בקוד — לא לכתוב אותה."),
 }
 RECAP_FIELDS = {  # הדוגמה ל-AI חייבת להתאים לכלל, אחרת הוא מתבלבל ולא מחזיר כלום (09/11/2026)
-    "sport": '{"label": "...", "team1": "...", "score1": 0, "team2": "...", "score2": 0, "winner": "...", "ids": ["..."]}',
+    "sport": '{"label": "...", "text": "...", "ids": ["..."]}',
     "ent": '{"label": "...", "text": "...", "ids": ["..."]}',
 }
 RECAP_FORMAT = """
@@ -877,23 +876,18 @@ def in_tv(label: str, tv: list) -> bool:
     name = re.sub(r"[\"'״׳]", "", label).strip()
     return bool(name) and any(name in re.sub(r"[\"'״׳]", "", t) for t in tv)
 
-def game_line(r: dict) -> str:
-    """שורת משחק מנתונים: המנצחת קודם ("הפועל ירושלים 65, העמק 59"); בלי תוצאה בכתבה — "X ניצחה את Y".
-    winner שלא מתאים לתוצאה = מספרים הפוכים → ריק (הפועל י-ם "59, העמק 65", 09/11/2026)."""
-    t1, t2, w = (as_text(r.get(k)).strip() for k in ("team1", "team2", "winner"))
-    same = lambda a, b: bool(_plain(a)) and (_plain(a) in _plain(b) or _plain(b) in _plain(a))
-    if not (t1 and t2):
-        return ""
-    try:
-        s1, s2 = int(r.get("score1")), int(r.get("score2"))
-    except (TypeError, ValueError):  # אין תוצאה בכתבה — רק מי ניצח
-        if same(w, t1) or same(w, t2):
-            return f"{t1} ניצחה את {t2}" if same(w, t1) else f"{t2} ניצחה את {t1}"
-        return f"{t1} ו{t2} סיימו בתיקו" if _plain(w) == "תיקו" else ""
-    if s1 == s2:
-        return f"{t1} {s1}, {t2} {s2}"
-    (hi, hs), (lo, ls) = ((t1, s1), (t2, s2)) if s1 > s2 else ((t2, s2), (t1, s1))
-    return f"{hi} {hs}, {lo} {ls}" if same(w, hi) else ""
+def contradicts(text: str) -> bool:
+    """שורת משחק שאומרת שקבוצה ניצחה, כשלפי המספרים שבשורה היא הפסידה (או להפך)."""
+    pairs = re.findall(r"([^,—\d]+?)\s(\d+)(?=,|\s—|$)", text)
+    if len(pairs) < 2:
+        return False
+    (a, sa), (b, sb) = [(_plain(t).strip(" •—-"), int(n)) for t, n in pairs[:2]]
+    if sa == sb:
+        return False
+    winner, loser = (a, b) if sa > sb else (b, a)
+    rest = _plain(text.split("—", 1)[1]) if "—" in text else ""
+    won = re.search(r"(\S+(?: \S+)?) (?:חגגה? ניצחון|ניצחה?|גברה? על)", rest)
+    return bool(won and loser and (won.group(1) in loser or loser.endswith(won.group(1))) and won.group(1) not in winner)
 
 def recap_rows(key: str, rows: list, results: list = (), shown: set = frozenset(),
                tv_last: list = (), tv_tonight: list = (), names: list = ()) -> list:
@@ -903,7 +897,9 @@ def recap_rows(key: str, rows: list, results: list = (), shown: set = frozenset(
     aired = [n for n, _ in reality_on(tv_last_items(tv_last), names)] if key == "ent" else []
     for r in rows or []:
         ids = [i for i in r.get("ids") or [] if i in ITEMS]
-        text = game_line(r) if key == "sport" else clean_text(r.get("text"))
+        text = clean_text(r.get("text"))
+        if key == "sport" and contradicts(text):
+            continue  # "הפועל ירושלים 59, העמק 65 — הפועל ירושלים חגגה ניצחון": תוצאה הפוכה, לא מציגים
         label = plain_hebrew(r.get("label")).strip(" —–-")
         if label == "הערב":
             continue  # "הערב" נבנה בקוד מהלוח (premiere_line)
@@ -966,6 +962,9 @@ SOURCE_NAMES = [(r"globes|גלובס", "גלובס"), (r"calcalist|כלכליס�
 def short_source(name: str) -> str:
     return next((short for pat, short in SOURCE_NAMES if re.search(pat, name, re.I)), name.split(" - ")[0].strip())
 
+COMMON = {"הפועל", "מכבי", "נבחרת", "ניצחון", "משחק", "אחרי", "לאחר", "ליגת", "הליגה", "העונה", "ישראל", "שחקן", "מאמן",
+          "בעקבות", "חדשה", "חדש", "הראשון", "הראשונה", "סדרה", "עונה", "פרק"}  # מילים נפוצות — לא "אותו כוכב"
+
 def topic_blocks(key: str, ai: dict, shown: set | None = None) -> list:
     """בלוק "אמש" (אם יש) + עד 5 ידיעות; כתבה שכבר בבלוק או כבר הוצגה (גם בנושא אחר) — מדלגים לבאה בתור."""
     seen = shown if shown is not None else set()
@@ -981,7 +980,7 @@ def topic_blocks(key: str, ai: dict, shown: set | None = None) -> list:
         labels = []
     out, per_source, names = [], {}, set()
     titles = [set(re.findall(r"\w{4,}", as_text(e.get("title")))) for e in ai.get(key) or []]
-    rare = {w for t in titles for w in t if sum(w in x for x in titles) <= 3} if key in LIGHT else set()
+    rare = {w for t in titles for w in t if sum(w in x for x in titles) >= 2} - COMMON if key in LIGHT else set()
     for e, words in zip(ai.get(key) or [], titles):
         if words & rare & names:
             continue  # עוד ידיעה על אותו שחקן/כוכב — אחת מספיקה
