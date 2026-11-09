@@ -93,9 +93,12 @@ pub, _ = bot.render(now, [], None, {}, dup_ai, channel=True)
 text = "\n".join(sum(pub, []))
 assert "כפול" not in text and text.count('href="https://x/1"') == 1 and "📚" in text  # מקור פעם אחת, בשורת המקורות
 # 5 ידיעות לכל היותר בנושא; טבלת השוק בלי תווי כיוון בתוכה
-eight = bot.register("v", [dict(own, title=f"story {n}", link=f"https://v/{n}") for n in range(8)])
+eight = bot.register("v", [dict(own, title=f"story {n}", link=f"https://v/{n}", source=f"src{n}") for n in range(8)])
 msgs, _ = bot.render(now, ["🟢 a", "🔴 b"], None, {}, {"world": [dict(good, id=e["id"], source_title=e["title"]) for e in eight]})
 assert sum(b.startswith("🔹") for b in msgs[0]) == 5
+same = bot.register("u", [dict(own, title=f"same {n}", link=f"https://u/{n}") for n in range(4)])  # כולן BBC
+msgs, _ = bot.render(now, [], None, {}, {"world": [dict(good, id=e["id"], source_title=e["title"]) for e in same]})
+assert sum(b.startswith("🔹") for b in msgs[0]) == 2  # עד 2 מאותו מקור
 table = bot.chunks(next(m for m in bot.render(now, ["🟢 a", "🔴 b"], None, {}, {})[0]))[0]
 assert "\n🔴 b</pre>" in table
 
@@ -142,7 +145,7 @@ assert not any("🏟️" in b for b in sum(msgs, []))
 
 # ידיעה על כתבה שכבר בבלוק "אמש" לא חוזרת — עוברים לבאה בתור; ספורט/בידור בפורמט קליל
 iran = dict(good, id="w2", source_title="Iran talks", title="שיחות")
-blocks = bot.topic_blocks("sport", {"sport": [good, iran], "sport_recap": [{"label": "יורוליג", "text": "מכבי ניצחה", "ids": ["w1"]}]})
+blocks = bot.topic_blocks("sport", {"sport": [good, iran], "sport_recap": [{"label": "יורוליג", "team1": "מכבי", "score1": 80, "team2": "ריאל", "score2": 70, "winner": "מכבי", "ids": ["w1"]}]})
 assert blocks[0].startswith("🏟️") and len(blocks) == 2 and "שיחות" in blocks[1] and "השורה התחתונה" not in blocks[1]
 assert "השורה התחתונה" in bot.topic_blocks("israel", {"israel": [good]})[1]
 assert len(bot.topic_blocks("world", {"world": [good] * 9})) == 2  # אותה כתבה פעמיים — פעם אחת
@@ -168,15 +171,15 @@ assert block == '🏟️ <b>אמש במגרשים</b>\n• <b>יורוליג</b>
 assert bot.recap_block("sport", [], res, {"FC Barcelona": "ברצלונה"}).endswith("הפועל ת&quot;א 90, ברצלונה 93")
 assert bot.ISRAELI.search("OFI Crete Hapoel Be'er") and bot.he_club("Hapoel Be'er") == 'הפועל ב"ש'  # השם ב-ESPN
 # בספורט — רק שורות עם ישראלים
-only_il = bot.recap_block("sport", [{"label": "יורוליג", "text": "ולנסיה גברה על מילאנו", "ids": ["w1"]},
-                                    {"label": "ליגת העל", "text": "מכבי חיפה 2, בית\"ר 1", "ids": ["w1"]}])
+only_il = bot.recap_block("sport", [{"label": "יורוליג", "team1": "ולנסיה", "score1": 84, "team2": "מילאנו", "score2": 73, "winner": "ולנסיה", "ids": ["w1"]},
+                                    {"label": "ליגת העל", "team1": "מכבי חיפה", "score1": 2, "team2": "בית\"ר", "score2": 1, "winner": "מכבי חיפה", "ids": ["w1"]}])
 assert "ולנסיה" not in only_il and "מכבי חיפה" in only_il
 # אותה כתבה לא מופיעה בשני נושאים — נשארת בראשון (ספורט לפני בידור)
 msgs, _ = bot.render(now, [], None, {}, {"sport": [good], "ent": [good, iran]})
 ent = next(m for m in msgs if any("בידור" in b for b in m[:2]))
 assert sum(b.startswith("🔹") for b in ent) == 1 and "שיחות" in "\n".join(ent)
 assert bot.recap_block("sport", [], []) == ""
-dup = bot.recap_block("sport", [{"label": "יורוליג", "text": "Hapoel 90-93 Barcelona — הפסד שני", "ids": ["w1"]}], res)
+dup = bot.recap_block("sport", [{"label": "יורוליג", "team1": "הפועל ת\"א", "score1": 90, "team2": "ברצלונה", "score2": 93, "winner": "ברצלונה", "ids": ["w1"]}], res)
 assert dup.count("•") == 1  # השורה של ה-AI על אותו משחק לא מוצגת
 assert "🇮🇱" not in bot.article(dict(good, emoji="🇮🇱"))
 
@@ -304,6 +307,22 @@ pub, _ = bot.render(now, ["🟢 a"], None, {}, ai, channel=True)
 mkt = "\n".join(next(m for m in pub if any("שוק ההון" in b for b in m[:2])))
 assert "עונת הדיווחים" not in mkt and "בקרוב" in mkt and "זינוק" in mkt
 assert bot.short_source("Yahoo Finance") == "Yahoo"
+# 🏟️ שורת משחק מנתונים: המנצחת קודם; מנצחת שלא מתאימה לתוצאה (מספרים הפוכים) — לא מוצגת; שני משחקים באותו מפעל — שתי שורות
+assert bot.game_line({"team1": "הפועל ירושלים", "score1": 65, "team2": "העמק", "score2": 59, "winner": "הפועל ירושלים"}) == "הפועל ירושלים 65, העמק 59"
+assert bot.game_line({"team1": "הפועל ירושלים", "score1": 59, "team2": "העמק", "score2": 65, "winner": "הפועל ירושלים"}) == ""
+assert bot.game_line({"team1": "א", "score1": 1, "team2": "ב", "score2": 1, "winner": "תיקו"}) == "א 1, ב 1"
+assert bot.game_line({"team1": "א", "score1": "x"}) == ""
+two = bot.recap_block("sport", [{"label": "ליגת העל", "team1": "מכבי חיפה", "score1": 2, "team2": "בני סכנין", "score2": 0, "winner": "מכבי חיפה", "ids": ["w1"]},
+                                {"label": "ליגת העל", "team1": "הפועל ת\"א", "score1": 1, "team2": "הפועל ב\"ש", "score2": 0, "winner": "הפועל ת\"א", "ids": ["w2"]}])
+assert two.count("• <b>ליגת העל</b>") == 2
+# 📺 ריאליטי: רק תוצאה; בלי תוצאה — אין שורה
+assert bot.recap_block("ent", [{"label": "הכוורת", "text": "שלושה מתמודדים מתחרים על תואר", "ids": ["w1"]}]) == ""
+assert bot.recap_block("ent", [{"label": "הכוורת", "text": "שלושה מתמודדים מתחרים", "ids": []}], tv_last=[{"title": "הכוורת"}], names=["הכוורת"]) == ""
+# 📈 בלי דגלים ובלי מקף בתווית
+ai = {"market_why": [{"label": "🇨🇳 — אינפלציה במפעלים", "text": "מחירי היצרן טיפסו", "ids": []}]}
+pub, _ = bot.render(now, ["🟢 a"], None, {}, ai, channel=True)
+mkt = "\n".join(next(m for m in pub if any("שוק ההון" in b for b in m[:2])))
+assert "• <b>אינפלציה במפעלים</b> — מחירי היצרן טיפסו" in mkt and "🇨🇳" not in mkt
 bot.FAILURES.clear()
 
 print("ok")
