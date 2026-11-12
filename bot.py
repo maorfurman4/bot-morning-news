@@ -698,6 +698,7 @@ PROOF = """אתה מגיה לשוני של בריף חדשות בעברית. ק�
 ושם מוכר שנכתב לא נכון (למשל "ביינים" → Binance, "רת'מן" → רוטמן).
 אסור: לשנות עובדות, מספרים, שמות או משמעות; להוסיף או למחוק מידע; לשנות טון או לקצר. טקסט תקין — מחזירים בדיוק כמו שהוא.
 אל תיגע בסימני פיסוק ובמקפים שאינם שגויים, ואל תפרש ראשי תיבות או מונחים מקובלים (API, AI, מנכ"ל).
+שמות חברות ומוצרים באנגלית נשארים באנגלית (Nvidia, לא "אנבידיה").
 החזר JSON בלבד: {"texts": ["...", ...]} — אותו מספר פריטים, באותו סדר."""
 
 def ask_gemini(system: str, payload: dict) -> dict:
@@ -850,7 +851,10 @@ def as_text(v) -> str:
         return " ".join(as_text(x) for x in v)
     return "" if v is None else str(v)
 
-JARGON = [(r"\bCFO\b", 'סמנכ"ל הכספים'), (r"\bCEO\b", 'מנכ"ל'), (r"לוק[\s־-]?אפ", "תום תקופת החסימה"),
+DOUBT = re.compile(r"\(\s*לפי ה(כותרת|דיווח|כתבה)[^)]*\)|[א-ת]{2,}/[א-ת]{2,} \(לפי")  # "גנץ/איזנקוט (לפי הכותרת)"
+
+JARGON = [(r"\b([בלהומשכו]?)א?נבידיה\b", lambda m: (m.group(1) + "-" if m.group(1) else "") + "Nvidia"),  # שם אחיד
+          (r"\bCFO\b", 'סמנכ"ל הכספים'), (r"\bCEO\b", 'מנכ"ל'), (r"לוק[\s־-]?אפ", "תום תקופת החסימה"),
           (r"\bה?סשן\b", "יום המסחר"), (r"\bהמפגש(?= (החזק|החלש|הטוב|הגרוע))", "יום המסחר"),
           (r"\bה?סנטימנט\b", "מצב הרוח בשוק")]
 
@@ -878,6 +882,9 @@ LIGHT = {"sport", "ent"}  # פורמט קליל: כותרת + משפט אחד, �
 
 def article(e: dict, need_id: bool = True, light: bool = False) -> str:
     e = dict(e, **{f: as_text(e.get(f)) for f in ("title", "bottom_line", "emoji") if e.get(f) is not None})
+    if DOUBT.search(f"{e.get('title')} {e.get('bottom_line')}"):
+        print(f"🚫 dropped (AI unsure): {e.get('title')!r}")
+        return ""  # ה-AI לא בטוח במה שכתב — לא מציגים
     item = resolve(e)
     if not e.get("title") or not e.get("bottom_line") or (not item and (need_id or e.get("id"))):
         print(f"🚫 dropped (no matching article): id={e.get('id')} source_title={e.get('source_title')!r}")
@@ -937,6 +944,45 @@ OUTCOME = re.compile(r"הודח|הודחה|הודחו|נחשף|נחשפה|נחש
                      r"עלו? לגמר|עלתה לגמר|נבחר|נבחרה|"
                      r"פרש|פרשה|עזב|עזבה|נתפס|נתפסה|אלוף|אלופה")  # "פרק הדחה"/"אירוע הגמר" — לא תוצאה
 
+# כתבה חדשה יכולה להזכיר הדחה ישנה ("אבי שושן הודח" חזר 5 ימים אחרי, 12/11/2026) — לכן שלוש בדיקות:
+REPORTED_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reported.json")
+
+def fact_words(text: str) -> set:
+    return {w for w in re.findall(r"\w{3,}", _plain(text)) if not OUTCOME.fullmatch(w)}
+
+def fact_in_title(text: str, title: str) -> bool:
+    """העובדה כתובה בכותרת הכתבה עצמה: מילת תוצאה (הודח/נחשף/ניצח) + שם מהשורה."""
+    title = _plain(title)
+    return bool(OUTCOME.search(title)) and any(w in title for w in fact_words(text))
+
+def after_airing(item: dict, label: str, tv_last: list) -> bool:
+    """הכתבה פורסמה אחרי תחילת הפרק של אמש (לפי הלוח). בלי שעה בלוח — לא פוסלים."""
+    name = _plain(label)
+    time = next((x.get("time") for x in tv_last_items(tv_last) if x.get("time") and name and name in _plain(x.get("title"))), None)
+    if not time or not item.get("published"):
+        return True
+    h, m = map(int, time.split(":"))
+    day = datetime.now(IL_TZ).date() - timedelta(days=0 if h < 6 else 1)  # פרק שהתחיל אחרי חצות — כבר "היום"
+    return item["published"] >= datetime.combine(day, datetime.min.time(), IL_TZ).replace(hour=h, minute=m)
+
+def reported() -> list:
+    try:
+        with open(REPORTED_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return []
+
+def already_reported(label: str, text: str) -> bool:
+    words = fact_words(short_fact(label, text))
+    return bool(words) and any(_plain(r.get("show")) == _plain(label) and words <= set(r.get("words") or []) for r in reported())
+
+def remember(rows: list, today) -> None:
+    """שומר את עובדות הריאליטי שנשלחו לערוץ (14 ימים) — כדי שלא יחזרו. נקרא רק בבריף האמיתי, לא בבדיקות."""
+    keep = [r for r in reported() if r.get("date", "") >= str(today - timedelta(days=14))]
+    keep += [{"date": str(today), "show": _plain(r["label"]), "words": sorted(fact_words(r["text"]))} for r, _ in rows]
+    with open(REPORTED_FILE, "w", encoding="utf-8") as f:
+        json.dump(keep, f, ensure_ascii=False, indent=1)
+
 def schedule_line(name: str, x: dict) -> str:
     """שורה מהלוח עצמו, כשאין כתבה טרייה: מה שכתוב בכותרת הפרק ("הארנב נתפס ונחשף"), בלי ניחושים."""
     title = x.get("title") or ""
@@ -980,6 +1026,10 @@ def recap_rows(key: str, rows: list, results: list = (), shown: set = frozenset(
             if not any(n in _plain(label) or _plain(label) in n for n in aired):
                 print(f"🚫 recap {key}: not aired last night: {as_text(r.get('label'))[:20]!r} {as_text(r.get('text'))[:50]!r} ids={r.get('ids')}")
                 continue  # לא שודר אמש
+            ids = [i for i in ids if fact_in_title(text, ITEMS[i]["title"]) and after_airing(ITEMS[i], label, tv_last)]
+            if ids and already_reported(label, text):
+                print(f"🚫 recap {key}: already reported this week: {label[:20]!r} {text[:50]!r}")
+                continue
             if not ids:
                 print(f"🚫 recap {key}: outcome without an article: {label[:20]!r} {text[:50]!r}")
                 continue  # מי הודח/נחשף — רק מכתבה ("אבי שושן הודח" חזר 5 ימים אחרי, בלי מקור, 12/11/2026)
@@ -1255,6 +1305,8 @@ def build() -> list:
     edit_pass(ai)
     print(f"🔎 after editor: {count()}")
     proofread(ai)
+    if "--dry-run" not in sys.argv and not any(a.startswith("--only=") for a in sys.argv):
+        remember(recap_rows("ent", ai.get("ent_recap") or [], (), frozenset(), tv_last, tv_tonight, reality), today_il)
     print("🧠 AI returned: " + ", ".join(f"{k}: {len(v)}" for k, v in ai.items() if isinstance(v, list)) + f", insiders: {len(insiders)}")
     public, private = render(now.astimezone(IL_TZ), market_rows, close_date, holdings, ai, channel=bool(CHANNEL_ID),
                              insiders=insiders)

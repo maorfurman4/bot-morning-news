@@ -2,6 +2,11 @@
 from datetime import datetime, timezone
 
 import bot
+import os as _os0, tempfile as _tf0
+# הבדיקות הישנות של בלוק הריאליטי משתמשות בכתבות דמה — בלי בדיקת הכותרת ובלי קובץ הזיכרון האמיתי (נבדקים בנפרד למטה)
+_real_fit, bot.fact_in_title = bot.fact_in_title, lambda text, title: True
+_real_air, bot.after_airing = bot.after_airing, lambda item, label, tv: True
+bot.REPORTED_FILE = _os0.path.join(_tf0.mkdtemp(), "none.json")
 
 now = datetime(2026, 10, 23, 12, 0, tzinfo=timezone.utc)
 
@@ -359,6 +364,24 @@ mkt = "\n".join(next(m for m in pub if any("שוק ההון" in b for b in m[:2]
 assert "דיווחים על ישיבה" not in mkt and "נפט" in mkt and "בקרוב" in mkt
 blocks = bot.topic_blocks("sport", {"sport": [dict(good, title="דני אבדיה: רצף מרשים", bottom_line="מציג רצף"), dict(iran, title="אבדיה קלע 25 נקודות")]})
 assert len(blocks) == 2 and "25" in blocks[1]
+# 📺 ריאליטי: העובדה בכותרת הכתבה, כתבה מאחרי השידור, ולא משהו שכבר דווח
+import tempfile as _tf
+real_rep, bot.REPORTED_FILE = bot.REPORTED_FILE, _os.path.join(_tf.mkdtemp(), "r.json")
+bot.fact_in_title, bot.after_airing = _real_fit, _real_air
+assert bot.fact_in_title("אבי שושן הודח", "אבי שושן הודח מהישרדות בדרמה") and not bot.fact_in_title("אבי שושן הודח", "לאחר ההדחה: אבי שושן שולח מסר")
+arts = bot.register("k", [dict(own, title="דנה לוי הודחה מהישרדות", link="https://k/1"), dict(own, title="לאחר ההדחה: אבי שושן שולח מסר", link="https://k/2")])
+tvk = [{"title": "הישרדות - פרק הדחה"}]
+rows_k = [{"label": "הישרדות", "text": "אבי שושן הודח", "ids": ["k2"]}, {"label": "הישרדות", "text": "דנה לוי הודחה", "ids": ["k1"]}]
+got = bot.recap_rows("ent", rows_k, tv_last=tvk, names=["הישרדות"])
+assert [r["text"] for r, _ in got] == ["דנה לוי הודחה"]
+bot.remember(got, now.date())
+assert bot.already_reported("הישרדות", "דנה לוי הודחה") and bot.recap_rows("ent", rows_k, tv_last=tvk, names=["הישרדות"]) == []
+late = dict(own, published=bot.datetime.now(bot.IL_TZ) - bot.timedelta(days=3))
+assert not bot.after_airing(late, "הישרדות", [{"title": "הישרדות", "time": "21:15"}]) and bot.after_airing(late, "הישרדות", tvk)
+bot.REPORTED_FILE = real_rep
+# 🔤 שם אחיד; ידיעה שה-AI לא בטוח בה — לא מוצגת
+assert bot.plain_hebrew("מנכ\"ל אנבידיה, משבר בנבידיה") == 'מנכ"ל Nvidia, משבר ב-Nvidia'
+assert bot.article(dict(good, bottom_line="ראש הממשלה ובני גנץ/איזנקוט (לפי הכותרת) יערכו פגישה")) == ""
 bot.FAILURES.clear()
 
 print("ok")

@@ -69,7 +69,7 @@ jobs:
         [ -f schedule.json ] || exit 0
         git config user.name "news-bot"
         git config user.email "news-bot@users.noreply.github.com"
-        git add schedule.json
+        git add schedule.json reported.json 2>/dev/null || git add schedule.json
         git diff --cached --quiet && exit 0
         git commit -m "chore: TV schedule $(date -u +%F)"
         git pull --rebase -q && git push
