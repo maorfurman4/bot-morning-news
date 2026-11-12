@@ -388,6 +388,8 @@ assert bot.article(dict(good, bottom_line="ראש הממשלה ובני גנץ/�
 six = bot.register("f", [dict(own, title=f"fill {n}", link=f"https://f/{n}", source="BBC" if n < 4 else f"s{n}") for n in range(6)])
 blocks = bot.topic_blocks("world", {"world": [dict(good, id=e["id"], source_title=e["title"], title=e["title"]) for e in six] * 2})
 assert sum(b.startswith("🔹") for b in blocks) == 5 and "fill 5" in "\n".join(blocks)
+# ה-AI הוסיף את שם המקור לפני הכותרת — עדיין מזהים את הכתבה
+assert bot.resolve(dict(good, source_title="Reuters: Tesla falls 5%"))["link"] == "https://x/1"
 bot.FAILURES.clear()
 
 print("ok")

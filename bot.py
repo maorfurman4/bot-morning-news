@@ -840,8 +840,8 @@ def resolve(e: dict):
     if not want:
         return None
     item = ITEMS.get(e.get("id"))
-    if item and _norm(item["title"]) == want:
-        return item
+    if item and (_norm(item["title"]) == want or _norm(item["title"])[:40] in _norm(e.get("source_title"))):
+        return item  # גם כשה-AI הוסיף את שם המקור לפני הכותרת ("The Decoder: ...", 12/11/2026)
     return next((i for i in ITEMS.values() if _norm(i["title"]) == want), None)
 
 META = re.compile(r"הכתבה|בכתבה|הדיווח|בדיווח|לפי הדיווח|הידיעה|פרטים נוספים לא|כתבות עוסקות|מקורות מדווחים|פורסם ב")
