@@ -516,7 +516,7 @@ RULES = """
 """
 
 TOPIC_FORMAT = """
-בחר עד 7 ידיעות לפי סדר חשיבות (יוצגו 5 הראשונות שעוברות בדיקה) — החשובות והרלוונטיות ביותר בנושא.
+בחר עד 7 ידיעות לפי סדר חשיבות, ולפחות 7 אם יש (יוצגו 5 הראשונות שעוברות בדיקה, וחייבות להיות 5) — החשובות והרלוונטיות ביותר בנושא.
 הכי עדכני קודם: age_hours = כמה שעות עברו מהפרסום; sources = בכמה מקורות שונים מופיע אותו סיפור.
 העדף את הטרי ביותר, ואת הסיפורים עם sources גבוה —
 זה מה שכולם מדברים עליו עכשיו. הכל מ-24 השעות האחרונות. אם יש פחות ידיעות שבאמת שייכות לנושא — רק אותן;
@@ -553,8 +553,8 @@ RECAP = {
             "label = שם התוכנית, text = רק העובדה, עד 8 מילים, בלי הסברים ובלי לחזור על שם התוכנית: "
             "\"אבי שושן הודח\", ובזמר במסכה — מי נחשף מאחורי איזו מסכה: \"הארנב נחשף: <השם>\" (השם — רק אם כתוב בכתבה). "
             "תוכנית שאין עליה כתבה מה-24 שעות האחרונות ולא בלוח — לא להזכיר. "
-            "ל-recap: reality_articles (כתבות מחיפושי הריאליטי) והלוח. ה-items — רק מ-articles: בידור וסלבס, "
-            "לא הריאליטי שכבר בבלוק (כדי שיהיו 5 ידיעות נוספות). שורת \"הערב\" נבנית בקוד — לא לכתוב אותה."),
+            "ל-recap: reality_articles (כתבות מחיפושי הריאליטי) והלוח. ה-items — קודם מ-articles (בידור וסלבס); "
+            "אם אין שם 8 ידיעות טובות — להשלים מ-reality_articles (ראיונות, דרמות, רייטינג), רק לא מה שכבר ב-recap. שורת \"הערב\" נבנית בקוד — לא לכתוב אותה."),
 }
 RECAP_FIELDS = {  # הדוגמה ל-AI חייבת להתאים לכלל, אחרת הוא מתבלבל ולא מחזיר כלום (09/11/2026)
     "sport": '{"label": "...", "text": "...", "ids": ["..."]}',
@@ -1116,17 +1116,19 @@ def topic_blocks(key: str, ai: dict, shown: set | None = None) -> list:
         labels = [re.sub(r"[\"'״׳]", "", r["label"]) for r, _ in shown_rows if r["label"] != "הערב"]
     else:
         labels = []
-    out, per_source, names = [], {}, set()
+    out, per_source, names, spare = [], {}, set(), []
     titles = [set(re.findall(r"\w{4,}", as_text(e.get("title")))) for e in ai.get(key) or []]
     rare = {w for t in titles for w in t if sum(w in x for x in titles) >= 2} - COMMON if key in LIGHT else set()
     for e, words in zip(ai.get(key) or [], titles):
         if words & rare & names:
-            continue  # עוד ידיעה על אותו שחקן/כוכב — אחת מספיקה
+            continue  # עוד ידיעה על אותו שחקן/כוכב — אחת מספיקה (לא משלימים מזה: 3 ידיעות על אבדיה, 09/11/2026)
         if key == "sport" and "אבדיה" in as_text(e.get("title")) and not re.search(r"\d", f"{e.get('title')} {e.get('bottom_line')}"):
             continue  # אבדיה — רק עם משהו קונקרטי (נקודות, תוצאה), לא "רצף מרשים"
 
         item = resolve(e) or {}
         link, src = item.get("link"), short_source(item.get("source") or "")
+        if link not in seen and len(out) < 5 and src and per_source.get(src, 0) >= 2:
+            spare.append(e)
         if link in seen or len(out) == 5 or (src and per_source.get(src, 0) >= 2):
             continue  # עד 2 ידיעות מאותו מקור בנושא (טכנולוגיה, 09/11/2026: 4 מתוך 5 מ-Yahoo Finance)
         if any(l and l in re.sub(r"[\"'״׳]", "", e.get("title") or "") for l in labels):
@@ -1136,6 +1138,17 @@ def topic_blocks(key: str, ai: dict, shown: set | None = None) -> list:
             seen.add(link)
             per_source[src] = per_source.get(src, 0) + 1
             names |= words & rare
+    for e in spare:  # תמיד 5: אם חסר — משלימים ממה שנדחה רק בגלל "אותו מקור" (כפילות ושאר הכללים נשארים)
+        link = (resolve(e) or {}).get("link")
+        if len(out) == 5:
+            break
+        if link in seen or any(l and l in re.sub(r"[\"'״׳]", "", e.get("title") or "") for l in labels):
+            continue
+        if a := article(e, light=key in LIGHT):
+            out.append(a)
+            seen.add(link)
+    if len(out) < 5:
+        print(f"⚠️ {key}: only {len(out)} items ({len(ai.get(key) or [])} candidates)")
     return [block, *out]
 
 def render(today: datetime, market_rows: list, close_date, holdings: dict, ai: dict, channel: bool = False,
@@ -1261,7 +1274,8 @@ def build() -> list:
     results = get_results(now)
     weekend = now.astimezone(IL_TZ).weekday() in (4, 5)  # שישי, שבת
     jobs = {key: (RULES + f"\nהנושא: {name} — {rule}\n" + (WEEKEND_ENT if key == "ent" and weekend else "")
-                  + TOPIC_FORMAT.replace("עד 7", "10 (לפחות 8 אם יש)" if key in LIGHT else "עד 7")
+                  + TOPIC_FORMAT.replace("עד 7 ידיעות לפי סדר חשיבות, ולפחות 7", "10 ידיעות לפי סדר חשיבות, ולפחות 8" if key in LIGHT
+                                       else "עד 7 ידיעות לפי סדר חשיבות, ולפחות 7")
                   + (RECAP_FORMAT.format(rule=RECAP[key][2], fields=RECAP_FIELDS[key]) if key in RECAP else ""),
                   {"articles": news[key], **({"results": results} if key == "sport" else {})})
             for key, (_, name, rule) in TOPICS.items()}

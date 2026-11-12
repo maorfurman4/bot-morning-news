@@ -101,9 +101,9 @@ assert "כפול" not in text and text.count('href="https://x/1"') == 1 and "�
 eight = bot.register("v", [dict(own, title=f"story {n}", link=f"https://v/{n}", source=f"src{n}") for n in range(8)])
 msgs, _ = bot.render(now, ["🟢 a", "🔴 b"], None, {}, {"world": [dict(good, id=e["id"], source_title=e["title"]) for e in eight]})
 assert sum(b.startswith("🔹") for b in msgs[0]) == 5
-same = bot.register("u", [dict(own, title=f"same {n}", link=f"https://u/{n}") for n in range(4)])  # כולן BBC
+same = bot.register("u", [dict(own, title=f"same {n}", link=f"https://u/{n}", source="BBC" if n < 4 else f"o{n}") for n in range(7)])
 msgs, _ = bot.render(now, [], None, {}, {"world": [dict(good, id=e["id"], source_title=e["title"]) for e in same]})
-assert sum(b.startswith("🔹") for b in msgs[0]) == 2  # עד 2 מאותו מקור
+assert sum(b.startswith("🔹") for b in msgs[0]) == 5 and "\n".join(msgs[0]).count("· BBC") == 2  # עד 2 מאותו מקור כשיש מספיק אחרות
 table = bot.chunks(next(m for m in bot.render(now, ["🟢 a", "🔴 b"], None, {}, {})[0]))[0]
 assert "\n🔴 b</pre>" in table
 
@@ -382,6 +382,10 @@ bot.REPORTED_FILE = real_rep
 # 🔤 שם אחיד; ידיעה שה-AI לא בטוח בה — לא מוצגת
 assert bot.plain_hebrew("מנכ\"ל אנבידיה, משבר בנבידיה") == 'מנכ"ל Nvidia, משבר ב-Nvidia'
 assert bot.article(dict(good, bottom_line="ראש הממשלה ובני גנץ/איזנקוט (לפי הכותרת) יערכו פגישה")) == ""
+# 5️⃣ תמיד 5: כשחסר — משלימים ממה שנדחה רק בגלל "אותו מקור"; כתבה כפולה עדיין לא חוזרת
+six = bot.register("f", [dict(own, title=f"fill {n}", link=f"https://f/{n}", source="BBC" if n < 4 else f"s{n}") for n in range(6)])
+blocks = bot.topic_blocks("world", {"world": [dict(good, id=e["id"], source_title=e["title"], title=e["title"]) for e in six] * 2})
+assert sum(b.startswith("🔹") for b in blocks) == 5 and "fill 5" in "\n".join(blocks)
 bot.FAILURES.clear()
 
 print("ok")
