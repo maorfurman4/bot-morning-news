@@ -223,12 +223,12 @@ real_file, bot.SCHEDULE_FILE = bot.SCHEDULE_FILE, _os.path.join(tempfile.mkdtemp
 bot.save_tv(now.date(), tv)
 assert bot.tv_last_night(now.date() + bot.timedelta(days=1)) == tv and bot.tv_last_night(now.date()) == []
 bot.SCHEDULE_FILE = real_file
-rows = [{"label": "הישרדות", "text": "שי חי הודח", "ids": []}, {"label": "האח הגדול", "text": "המצאה", "ids": []}]
+rows = [{"label": "הישרדות", "text": "שי חי הודח", "ids": ["w1"]}, {"label": "האח הגדול", "text": "המצאה", "ids": []}]
 shown_rows = bot.recap_rows("ent", rows, tv_last=["הישרדות - פרק הדחה!"])
 assert [r["label"] for r, _ in shown_rows] == ["הישרדות"]
 # בלי כפל: ידיעה על תוכנית שכבר בבלוק — לא מוצגת
 surv = dict(good, id="w2", source_title="Iran talks", title="כוכב הישרדות מתראיין")
-blocks = bot.topic_blocks("ent", {"ent": [surv, good], "ent_recap": rows, "ent_tv_last": ["הישרדות - פרק הדחה!"]})
+blocks = bot.topic_blocks("ent", {"ent": [surv, iran], "ent_recap": rows, "ent_tv_last": ["הישרדות - פרק הדחה!"]})
 assert "שי חי הודח" in blocks[0] and len(blocks) == 2 and "הישרדות" not in blocks[1]
 
 # בידור: כתבות מחיפושי הריאליטי — לבלוק בלבד; השאר — לידיעות
@@ -326,13 +326,39 @@ mkt = "\n".join(next(m for m in pub if any("שוק ההון" in b for b in m[:2]
 assert "• <b>אינפלציה במפעלים</b> — מחירי היצרן טיפסו" in mkt and "🇨🇳" not in mkt
 # ⚽ אותו כוכב — ידיעה אחת; הדוגמה ל-AI בבלוק הספורט — לפי השדות החדשים
 avd = bot.register("d", [dict(own, title=t, link=f"https://d/{n}", source=f"s{n}") for n, t in enumerate(
-    ["דני אבדיה מציג נתון מפתיע", "פורטלנד מאשימה את וומבניאמה אחרי מהלך עם אבדיה", "אבדיה מצביע על הסיבה לקריסת פורטלנד",
+    ["דני אבדיה קלע 30 נקודות", "פורטלנד מאשימה את וומבניאמה אחרי מהלך עם אבדיה", "אבדיה מצביע על הסיבה לקריסת פורטלנד",
      "בארה\"ב מזהים בעיה אצל אבדיה", "חסון וטיאנו אלופי ישראל"])])
 msgs, _ = bot.render(now, [], None, {}, {"sport": [dict(good, id=e["id"], source_title=e["title"], title=e["title"]) for e in avd]})
 sp = "\n".join(sum(msgs, []))
 assert sp.count("אבדיה") == 1 and "חסון וטיאנו" in sp
 assert '"text"' in bot.RECAP_FORMAT.format(rule="x", fields=bot.RECAP_FIELDS["sport"])
 assert bot.short_source("Bloomberg.com") == "Bloomberg"
+# ✏️ מגיה: תיקון לשון מתקבל; שינוי מספר או אורך חריג — נדחה; כשל — הטקסט נשאר
+assert bot.safe_fix("פרצת ביינים חושפת 3 בעיות", "פרצת Binance חושפת 3 בעיות") == "פרצת Binance חושפת 3 בעיות"
+assert bot.safe_fix("עלה 3%", "עלה 5%") == "עלה 3%" and bot.safe_fix("משפט ארוך מאוד עם הרבה מילים", "קצר") == "משפט ארוך מאוד עם הרבה מילים"
+ai = {"world": [dict(good, title="פרצת ביינים", bottom_line="עלה 3%")], "headline": "כותרת",
+      "ent_recap": [{"label": "x", "text": "שורה", "ids": []}]}
+key, bot.GEMINI_API_KEY = bot.GEMINI_API_KEY, "k"
+real_g, bot.ask_gemini = bot.ask_gemini, lambda s, p: {"texts": [t.replace("ביינים", "Binance").replace("3%", "9%") for t in p["texts"]]}
+bot.proofread(ai)
+assert ai["world"][0]["title"] == "פרצת Binance" and ai["world"][0]["bottom_line"] == "עלה 3%"
+bot.ask_gemini = lambda s, p: {"texts": ["רק אחד"]}
+bot.proofread(ai)
+assert ai["world"][0]["title"] == "פרצת Binance" and bot.FAILURES[-1].startswith("• <b>מגיה")
+bot.ask_gemini, bot.GEMINI_API_KEY = real_g, key
+# 📺 "מי הודח" רק מכתבה; "אירוע הגמר" מהלוח — לא תוצאה
+tvl = [{"title": "הישרדות - פרק הדחה משוגע!"}, {"title": "דאבל על הכסף - אירוע הגמר"}]
+blk = bot.recap_block("ent", [{"label": "הישרדות", "text": "אבי שושן הודח", "ids": []}], tv_last=tvl, names=["הישרדות", "דאבל על הכסף"])
+assert blk == ""
+assert "אבי שושן הודח" in bot.recap_block("ent", [{"label": "הישרדות", "text": "אבי שושן הודח", "ids": ["w1"]}], tv_last=tvl, names=["הישרדות"])
+# 📈 נבידיה ב"לשים לב" — לא חוזרת ב"מה הזיז" גם בניסוח אחר; ⚽ אבדיה בלי מספר — לא נכנס
+ai = {"market_why": [{"label": "משבר ניהולי בנבידיה", "text": "דיווחים על ישיבה", "ids": []}, {"label": "נפט", "text": "עלה", "ids": []}],
+      "watch": [{"label": "ישיבת דירקטוריון נבידיה", "text": "בקרוב", "ids": []}]}
+pub, _ = bot.render(now, ["🟢 a"], None, {}, ai, channel=True)
+mkt = "\n".join(next(m for m in pub if any("שוק ההון" in b for b in m[:2])))
+assert "דיווחים על ישיבה" not in mkt and "נפט" in mkt and "בקרוב" in mkt
+blocks = bot.topic_blocks("sport", {"sport": [dict(good, title="דני אבדיה: רצף מרשים", bottom_line="מציג רצף"), dict(iran, title="אבדיה קלע 25 נקודות")]})
+assert len(blocks) == 2 and "25" in blocks[1]
 bot.FAILURES.clear()
 
 print("ok")

@@ -691,6 +691,70 @@ EDITOR = """
 "drop": false}], "recap": [{"n": 0, "text": "...", "drop": false}]}]}
 """
 
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+PROOF = """אתה מגיה לשוני של בריף חדשות בעברית. קיבלת רשימת טקסטים קצרים (texts). תקן בכל אחד רק לשון:
+שגיאות כתיב, דקדוק, התאם מין ומספר, סדר מילים שבור, מילה באנגלית שנתקעה באמצע משפט עברי (תרגם), צירוף חסר פשר,
+ושם מוכר שנכתב לא נכון (למשל "ביינים" → Binance, "רת'מן" → רוטמן).
+אסור: לשנות עובדות, מספרים, שמות או משמעות; להוסיף או למחוק מידע; לשנות טון או לקצר. טקסט תקין — מחזירים בדיוק כמו שהוא.
+החזר JSON בלבד: {"texts": ["...", ...]} — אותו מספר פריטים, באותו סדר."""
+
+def ask_gemini(system: str, payload: dict) -> dict:
+    resp = requests.post(
+        f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent",
+        headers={"x-goog-api-key": GEMINI_API_KEY}, timeout=120,
+        json={"systemInstruction": {"parts": [{"text": system}]},
+              "contents": [{"role": "user", "parts": [{"text": json.dumps(payload, ensure_ascii=False)}]}],
+              "generationConfig": {"responseMimeType": "application/json", "temperature": 0}})
+    if not resp.ok:
+        raise RuntimeError(f"Gemini {resp.status_code}: {resp.text[:200]}")
+    u = resp.json().get("usageMetadata") or {}
+    print(f"💰 Gemini {GEMINI_MODEL}: in={u.get('promptTokenCount')} out={u.get('candidatesTokenCount')} thoughts={u.get('thoughtsTokenCount')}")
+    return json.loads(resp.json()["candidates"][0]["content"]["parts"][0]["text"])
+
+def safe_fix(old: str, new) -> str:
+    """תיקון של המגיה מתקבל רק אם לא נגע במספרים ולא שינה את האורך בצורה חריגה."""
+    new = as_text(new).strip()
+    if not new or re.findall(r"\d+", new) != re.findall(r"\d+", old) or not 0.6 <= len(new) / max(1, len(old)) <= 1.5:
+        return old
+    return new
+
+def proof_slots(ai: dict) -> list:
+    """כל הטקסטים שה-AI כתב: (מילון, שדה)."""
+    slots = [(e, f) for k in TOPICS for e in ai.get(k) or [] for f in ("title", "bottom_line") if isinstance(e.get(f), str)]
+    slots += [(r, "text") for k in RECAP for r in ai.get(f"{k}_recap") or [] if isinstance(r.get("text"), str)]
+    slots += [(w, f) for part in ("market_why", "watch") for w in ai.get(part) or [] for f in ("label", "text") if isinstance(w.get(f), str)]
+    slots += [(e, f) for part in ("market_news", "companies") for e in ai.get(part) or [] for f in ("title", "bottom_line") if isinstance(e.get(f), str)]
+    if isinstance(ai.get("headline"), str):
+        slots.append((ai, "headline"))
+    return slots
+
+def proofread(ai: dict) -> None:
+    """מגיה לשוני (Gemini) על כל הבריף, בקריאה אחת. בלי מפתח או אם נכשל — הטקסט נשאר כמו שהוא."""
+    slots = proof_slots(ai)
+    if not GEMINI_API_KEY or not slots:
+        return
+    texts = [d[f] for d, f in slots]
+    try:
+        fixed = ask_gemini(PROOF, {"texts": texts}).get("texts")
+        if not isinstance(fixed, list) or len(fixed) != len(texts):
+            raise ValueError(f"expected {len(texts)} texts, got {len(fixed) if isinstance(fixed, list) else type(fixed).__name__}")
+    except Exception as ex:
+        fail("מגיה (Gemini)", ex)
+        return
+    changed = rejected = 0
+    for (d, f), old, new in zip(slots, texts, fixed):
+        ok = safe_fix(old, new)
+        if ok != old:
+            changed += 1
+            if "--dry-run" in sys.argv:
+                print(f"✏️ {old}\n → {ok}")
+            d[f] = ok
+        elif as_text(new).strip() != old:
+            rejected += 1
+            print(f"✋ proof rejected (numbers/length changed): {old[:60]!r} → {as_text(new)[:60]!r}")
+    print(f"✏️ proofread: {changed} fixed, {rejected} rejected, {len(texts) - changed - rejected} unchanged")
+
 def edit_pass(ai: dict) -> None:
     """עורך שני על הטקסט הסופי; אם נכשל — נשאר הטקסט המקורי."""
     payload = {"topics": [{"topic": TOPICS[k][1], "key": k,
@@ -865,7 +929,7 @@ def short_fact(label: str, text: str) -> str:
 
 OUTCOME = re.compile(r"הודח|הודחה|הודחו|נחשף|נחשפה|נחשפו|ניצח|ניצחה|זכה|זכתה|זכו|עלו? (?:ל)?שלב|עלתה (?:ל)?שלב|"
                      r"עלו? לגמר|עלתה לגמר|נבחר|נבחרה|"
-                     r"פרש|פרשה|עזב|עזבה|נתפס|נתפסה|הדחה|גמר|אלוף|אלופה")
+                     r"פרש|פרשה|עזב|עזבה|נתפס|נתפסה|אלוף|אלופה")  # "פרק הדחה"/"אירוע הגמר" — לא תוצאה
 
 def schedule_line(name: str, x: dict) -> str:
     """שורה מהלוח עצמו, כשאין כתבה טרייה: מה שכתוב בכותרת הפרק ("הארנב נתפס ונחשף"), בלי ניחושים."""
@@ -910,6 +974,9 @@ def recap_rows(key: str, rows: list, results: list = (), shown: set = frozenset(
             if not any(n in _plain(label) or _plain(label) in n for n in aired):
                 print(f"🚫 recap {key}: not aired last night: {as_text(r.get('label'))[:20]!r} {as_text(r.get('text'))[:50]!r} ids={r.get('ids')}")
                 continue  # לא שודר אמש
+            if not ids:
+                print(f"🚫 recap {key}: outcome without an article: {label[:20]!r} {text[:50]!r}")
+                continue  # מי הודח/נחשף — רק מכתבה ("אבי שושן הודח" חזר 5 ימים אחרי, בלי מקור, 12/11/2026)
         elif not ids and not in_tv(label, [x["title"] for x in tv_last_items(tv_last)]):
             print(f"🚫 recap {key}: no article and not on TV: {as_text(r.get('label'))[:20]!r} {as_text(r.get('text'))[:50]!r} ids={r.get('ids')}")
             continue  # רק שורה שמבוססת על כתבה אמיתית או על תוכנית שבאמת בלוח השידורים
@@ -969,6 +1036,8 @@ def recap_block(key: str, rows: list, results: list = (), he: dict = {}, shown: 
                 out.append(f"• <b>הערב</b> — {esc(name)}, עונה חדשה{esc(where)}")
     return f"{icon} <b>{title}</b>\n" + "\n".join(out) if out else ""
 
+COMMON_MARKET = {"נתוני", "נתונים", "שוק", "השוק", "מניות", "מדדי", "מדד", "חששות", "דוחות", "ישיבת", "משבר"}
+
 SOURCE_NAMES = [(r"globes|גלובס", "גלובס"), (r"calcalist|כלכליסט", "כלכליסט"), (r"themarker|דה ?מרקר", "TheMarker"),
                 (r"ynet", "ynet"), (r"yahoo", "Yahoo"), (r"bloomberg", "Bloomberg")]
 
@@ -997,6 +1066,8 @@ def topic_blocks(key: str, ai: dict, shown: set | None = None) -> list:
     for e, words in zip(ai.get(key) or [], titles):
         if words & rare & names:
             continue  # עוד ידיעה על אותו שחקן/כוכב — אחת מספיקה
+        if key == "sport" and "אבדיה" in as_text(e.get("title")) and not re.search(r"\d", f"{e.get('title')} {e.get('bottom_line')}"):
+            continue  # אבדיה — רק עם משהו קונקרטי (נקודות, תוצאה), לא "רצף מרשים"
 
         item = resolve(e) or {}
         link, src = item.get("link"), short_source(item.get("source") or "")
@@ -1025,7 +1096,8 @@ def render(today: datetime, market_rows: list, close_date, holdings: dict, ai: d
             if text:
                 out.append(f"• <b>{esc(label)}</b> — {esc(text)}" if label else f"• {esc(text)}")
         return out
-    words = lambda w: set(re.findall(r"\w{4,}", plain_hebrew(w.get("label")).lower()))
+    stem = lambda x: re.sub(r"^[בלהומשכ](?=\w{4})", "", x)  # "בנבידיה" = "נבידיה"
+    words = lambda w: {stem(x) for x in re.findall(r"\w{4,}", plain_hebrew(w.get("label")).lower())} - COMMON_MARKET
     watch_words = set().union(*[words(w) for w in (ai.get("watch") or [])[:2]])
     why_entries = [w for w in ai.get("market_why") or [] if not words(w) & watch_words]  # "אינפלציה" פעמיים — רק ב"לשים לב"
     why, watch = notes(why_entries), notes(ai.get("watch"))
@@ -1176,6 +1248,7 @@ def build() -> list:
     print(f"🔎 after date check + sport move: {count()}")
     edit_pass(ai)
     print(f"🔎 after editor: {count()}")
+    proofread(ai)
     print("🧠 AI returned: " + ", ".join(f"{k}: {len(v)}" for k, v in ai.items() if isinstance(v, list)) + f", insiders: {len(insiders)}")
     public, private = render(now.astimezone(IL_TZ), market_rows, close_date, holdings, ai, channel=bool(CHANNEL_ID),
                              insiders=insiders)
