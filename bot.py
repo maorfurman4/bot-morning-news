@@ -706,7 +706,8 @@ def ask_gemini(system: str, payload: dict) -> dict:
             headers={"x-goog-api-key": GEMINI_API_KEY}, timeout=120,
             json={"systemInstruction": {"parts": [{"text": system}]},
                   "contents": [{"role": "user", "parts": [{"text": json.dumps(payload, ensure_ascii=False)}]}],
-                  "generationConfig": {"responseMimeType": "application/json", "temperature": 0}})
+                  "generationConfig": {"responseMimeType": "application/json", "temperature": 0,
+                                       "thinkingConfig": {"thinkingBudget": 0}}})  # בלי "חשיבה" — היא עלתה פי 3 מהתשובה
         if resp.status_code not in (429, 500, 503) or wait is None:
             break
         time.sleep(wait)
