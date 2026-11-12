@@ -194,7 +194,9 @@ ai = {"ent": [dict(good, id="w1", bottom_line="YNET חשף: א"), dict(good, id=
 real_ask, bot.ask_ai = bot.ask_ai, lambda s, p: {"topics": [{"key": "ent", "items": [
     {"id": "w1", "title": "א", "bottom_line": "א נקי"}, {"id": "w2", "drop": True}], "recap": [{"n": 0, "text": "y"}]}]}
 bot.edit_pass(ai)
-assert [e["bottom_line"] for e in ai["ent"]] == ["א נקי"] and ai["ent_recap"][0]["text"] == "y"
+assert ai["ent"][0]["bottom_line"] == "א נקי" and ai["ent_recap"][0]["text"] == "y"
+assert ai["ent"][-1]["title"] == "כפול"  # מתחת ל-5 — הפריט שהעורך הוריד חוזר לסוף התור (כפילות אמיתית נסננת ב-topic_blocks)
+assert sum(b.startswith("🔹") for b in bot.topic_blocks("ent", ai)) == 1
 def boom(s, p):
     raise RuntimeError("down")
 bot.ask_ai = boom

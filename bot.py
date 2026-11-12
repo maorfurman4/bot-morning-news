@@ -778,14 +778,15 @@ def edit_pass(ai: dict) -> None:
     for k in TOPICS:
         t = edited.get(k) or edited.get(TOPICS[k][1]) or {}
         fixes = {x.get("id"): x for x in t.get("items") or []}
-        kept = []
+        kept, dropped = [], []
         for e in ai.get(k) or []:
             x = fixes.get(e.get("id"), {})
             if x.get("drop"):
+                dropped.append(e)
                 continue
             e.update({f: x[f] for f in ("title", "bottom_line") if isinstance(x.get(f), str) and x[f].strip()})
             kept.append(e)
-        ai[k] = kept
+        ai[k] = kept + dropped[:max(0, 5 - len(kept))]  # העורך לא מוריד מתחת ל-5 (כפילות אמיתית נסננת בכל מקרה ב-topic_blocks)
         rows = ai.get(f"{k}_recap") or []
         drops = set()
         for x in t.get("recap") or []:
