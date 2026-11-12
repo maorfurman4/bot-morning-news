@@ -516,7 +516,7 @@ RULES = """
 """
 
 TOPIC_FORMAT = """
-בחר עד 7 ידיעות לפי סדר חשיבות (יוצגו 5 הראשונות שעוברות בדיקה) — החשובות והרלוונטיות ביותר בנושא.
+בחר עד 7 ידיעות לפי סדר חשיבות, ולפחות 7 אם יש (יוצגו 5 הראשונות שעוברות בדיקה, וחייבות להיות 5) — החשובות והרלוונטיות ביותר בנושא.
 הכי עדכני קודם: age_hours = כמה שעות עברו מהפרסום; sources = בכמה מקורות שונים מופיע אותו סיפור.
 העדף את הטרי ביותר, ואת הסיפורים עם sources גבוה —
 זה מה שכולם מדברים עליו עכשיו. הכל מ-24 השעות האחרונות. אם יש פחות ידיעות שבאמת שייכות לנושא — רק אותן;
@@ -553,8 +553,8 @@ RECAP = {
             "label = שם התוכנית, text = רק העובדה, עד 8 מילים, בלי הסברים ובלי לחזור על שם התוכנית: "
             "\"אבי שושן הודח\", ובזמר במסכה — מי נחשף מאחורי איזו מסכה: \"הארנב נחשף: <השם>\" (השם — רק אם כתוב בכתבה). "
             "תוכנית שאין עליה כתבה מה-24 שעות האחרונות ולא בלוח — לא להזכיר. "
-            "ל-recap: reality_articles (כתבות מחיפושי הריאליטי) והלוח. ה-items — רק מ-articles: בידור וסלבס, "
-            "לא הריאליטי שכבר בבלוק (כדי שיהיו 5 ידיעות נוספות). שורת \"הערב\" נבנית בקוד — לא לכתוב אותה."),
+            "ל-recap: reality_articles (כתבות מחיפושי הריאליטי) והלוח. ה-items — קודם מ-articles (בידור וסלבס); "
+            "אם אין שם 8 ידיעות טובות — להשלים מ-reality_articles (ראיונות, דרמות, רייטינג), רק לא מה שכבר ב-recap. שורת \"הערב\" נבנית בקוד — לא לכתוב אותה."),
 }
 RECAP_FIELDS = {  # הדוגמה ל-AI חייבת להתאים לכלל, אחרת הוא מתבלבל ולא מחזיר כלום (09/11/2026)
     "sport": '{"label": "...", "text": "...", "ids": ["..."]}',
@@ -683,13 +683,84 @@ EDITOR = """
    בתוכנית עצמה (רק מזכירה אותה, למשל "הוזכר בהקשר של...") — drop.
 2. מחק פתיחות כמו "YNET חשף", "הכתבה מציינת", "לפי הדיווח", זמני פרסום ("פורסם לפני X שעות") והתווית "המשמעות:".
 3. טון: בספורט ובבידור — קליל וזורם; בשאר — ענייני ומדויק.
-   בספורט ובבידור — לא להוריד ידיעה אם יישארו פחות מ-5, אלא אם היא כפולה או שוברת כלל מפורש.
+   בכל נושא — לא להוריד ידיעה אם יישארו פחות מ-5, אלא אם היא כפולה או שוברת כלל מפורש.
    בספורט — drop לידיעה על הרכב, חזרה לסגל או כשירות לקראת משחק (חוץ מפציעה של כוכב גדול), drop לידיעה בלי עובדה קונקרטית (תוצאה, מספר, אירוע — לא "ממשיך להשפיע"), ולידיעת כדורסל/יורוליג/NBA
    בלי קשר לקבוצה או שחקן ישראלי.
 4. אסור להוסיף עובדות, מספרים, שמות או תוצאות שלא כתובים בטקסט שקיבלת, ואסור לשנות תוצאות.
 החזר JSON בלבד, באותו מבנה: {"topics": [{"topic": "...", "items": [{"id": "...", "title": "...", "bottom_line": "...",
 "drop": false}], "recap": [{"n": 0, "text": "...", "drop": false}]}]}
 """
+
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+PROOF = """אתה מגיה לשוני של בריף חדשות בעברית. קיבלת רשימת טקסטים קצרים (texts). תקן בכל אחד רק לשון:
+שגיאות כתיב, דקדוק, התאם מין ומספר, סדר מילים שבור, מילה באנגלית שנתקעה באמצע משפט עברי (תרגם), צירוף חסר פשר,
+ושם מוכר שנכתב לא נכון (למשל "ביינים" → Binance, "רת'מן" → רוטמן).
+אסור: לשנות עובדות, מספרים, שמות או משמעות; להוסיף או למחוק מידע; לשנות טון או לקצר. טקסט תקין — מחזירים בדיוק כמו שהוא.
+אל תיגע בסימני פיסוק ובמקפים שאינם שגויים, ואל תפרש ראשי תיבות או מונחים מקובלים (API, AI, מנכ"ל).
+שמות חברות ומוצרים באנגלית נשארים באנגלית (Nvidia, לא "אנבידיה").
+החזר JSON בלבד: {"texts": ["...", ...]} — אותו מספר פריטים, באותו סדר."""
+
+def ask_gemini(system: str, payload: dict) -> dict:
+    for wait in (10, 30, None):  # Gemini מחזיר לפעמים 503 (עומס) — מחכים ומנסים שוב
+        resp = requests.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent",
+            headers={"x-goog-api-key": GEMINI_API_KEY}, timeout=120,
+            json={"systemInstruction": {"parts": [{"text": system}]},
+                  "contents": [{"role": "user", "parts": [{"text": json.dumps(payload, ensure_ascii=False)}]}],
+                  "generationConfig": {"responseMimeType": "application/json", "temperature": 0,
+                                       "thinkingConfig": {"thinkingBudget": 0}}})  # בלי "חשיבה" — היא עלתה פי 3 מהתשובה
+        if resp.status_code not in (429, 500, 503) or wait is None:
+            break
+        time.sleep(wait)
+    if not resp.ok:
+        raise RuntimeError(f"Gemini {resp.status_code}: {resp.text[:200]}")
+    u = resp.json().get("usageMetadata") or {}
+    print(f"💰 Gemini {GEMINI_MODEL}: in={u.get('promptTokenCount')} out={u.get('candidatesTokenCount')} thoughts={u.get('thoughtsTokenCount')}")
+    return json.loads(resp.json()["candidates"][0]["content"]["parts"][0]["text"])
+
+def safe_fix(old: str, new) -> str:
+    """תיקון של המגיה מתקבל רק אם לא נגע במספרים ולא שינה את האורך בצורה חריגה."""
+    new = as_text(new).strip()
+    if not new or re.findall(r"\d+", new) != re.findall(r"\d+", old) or not 0.6 <= len(new) / max(1, len(old)) <= 1.5:
+        return old
+    return new
+
+def proof_slots(ai: dict) -> list:
+    """כל הטקסטים שה-AI כתב: (מילון, שדה)."""
+    slots = [(e, f) for k in TOPICS for e in ai.get(k) or [] for f in ("title", "bottom_line") if isinstance(e.get(f), str)]
+    slots += [(r, "text") for k in RECAP for r in ai.get(f"{k}_recap") or [] if isinstance(r.get("text"), str)]
+    slots += [(w, f) for part in ("market_why", "watch") for w in ai.get(part) or [] for f in ("label", "text") if isinstance(w.get(f), str)]
+    slots += [(e, f) for part in ("market_news", "companies") for e in ai.get(part) or [] for f in ("title", "bottom_line") if isinstance(e.get(f), str)]
+    if isinstance(ai.get("headline"), str):
+        slots.append((ai, "headline"))
+    return slots
+
+def proofread(ai: dict) -> None:
+    """מגיה לשוני (Gemini) על כל הבריף, בקריאה אחת. בלי מפתח או אם נכשל — הטקסט נשאר כמו שהוא."""
+    slots = proof_slots(ai)
+    if not GEMINI_API_KEY or not slots:
+        return
+    texts = [d[f] for d, f in slots]
+    try:
+        fixed = ask_gemini(PROOF, {"texts": texts}).get("texts")
+        if not isinstance(fixed, list) or len(fixed) != len(texts):
+            raise ValueError(f"expected {len(texts)} texts, got {len(fixed) if isinstance(fixed, list) else type(fixed).__name__}")
+    except Exception as ex:
+        fail("מגיה (Gemini)", ex)
+        return
+    changed = rejected = 0
+    for (d, f), old, new in zip(slots, texts, fixed):
+        ok = safe_fix(old, new)
+        if ok != old:
+            changed += 1
+            if "--dry-run" in sys.argv:
+                print(f"✏️ {old}\n → {ok}")
+            d[f] = ok
+        elif as_text(new).strip() != old:
+            rejected += 1
+            print(f"✋ proof rejected (numbers/length changed): {old[:60]!r} → {as_text(new)[:60]!r}")
+    print(f"✏️ proofread: {changed} fixed, {rejected} rejected, {len(texts) - changed - rejected} unchanged")
 
 def edit_pass(ai: dict) -> None:
     """עורך שני על הטקסט הסופי; אם נכשל — נשאר הטקסט המקורי."""
@@ -707,14 +778,15 @@ def edit_pass(ai: dict) -> None:
     for k in TOPICS:
         t = edited.get(k) or edited.get(TOPICS[k][1]) or {}
         fixes = {x.get("id"): x for x in t.get("items") or []}
-        kept = []
+        kept, dropped = [], []
         for e in ai.get(k) or []:
             x = fixes.get(e.get("id"), {})
             if x.get("drop"):
+                dropped.append(e)
                 continue
             e.update({f: x[f] for f in ("title", "bottom_line") if isinstance(x.get(f), str) and x[f].strip()})
             kept.append(e)
-        ai[k] = kept
+        ai[k] = kept + dropped[:max(0, 5 - len(kept))]  # העורך לא מוריד מתחת ל-5 (כפילות אמיתית נסננת בכל מקרה ב-topic_blocks)
         rows = ai.get(f"{k}_recap") or []
         drops = set()
         for x in t.get("recap") or []:
@@ -768,8 +840,8 @@ def resolve(e: dict):
     if not want:
         return None
     item = ITEMS.get(e.get("id"))
-    if item and _norm(item["title"]) == want:
-        return item
+    if item and (_norm(item["title"]) == want or _norm(item["title"])[:40] in _norm(e.get("source_title"))):
+        return item  # גם כשה-AI הוסיף את שם המקור לפני הכותרת ("The Decoder: ...", 12/11/2026)
     return next((i for i in ITEMS.values() if _norm(i["title"]) == want), None)
 
 META = re.compile(r"הכתבה|בכתבה|הדיווח|בדיווח|לפי הדיווח|הידיעה|פרטים נוספים לא|כתבות עוסקות|מקורות מדווחים|פורסם ב")
@@ -780,7 +852,10 @@ def as_text(v) -> str:
         return " ".join(as_text(x) for x in v)
     return "" if v is None else str(v)
 
-JARGON = [(r"\bCFO\b", 'סמנכ"ל הכספים'), (r"\bCEO\b", 'מנכ"ל'), (r"לוק[\s־-]?אפ", "תום תקופת החסימה"),
+DOUBT = re.compile(r"\(\s*לפי ה(כותרת|דיווח|כתבה)[^)]*\)|[א-ת]{2,}/[א-ת]{2,} \(לפי")  # "גנץ/איזנקוט (לפי הכותרת)"
+
+JARGON = [(r"\b([בלהומשכו]?)א?נבידיה\b", lambda m: (m.group(1) + "-" if m.group(1) else "") + "Nvidia"),  # שם אחיד
+          (r"\bCFO\b", 'סמנכ"ל הכספים'), (r"\bCEO\b", 'מנכ"ל'), (r"לוק[\s־-]?אפ", "תום תקופת החסימה"),
           (r"\bה?סשן\b", "יום המסחר"), (r"\bהמפגש(?= (החזק|החלש|הטוב|הגרוע))", "יום המסחר"),
           (r"\bה?סנטימנט\b", "מצב הרוח בשוק")]
 
@@ -808,6 +883,9 @@ LIGHT = {"sport", "ent"}  # פורמט קליל: כותרת + משפט אחד, �
 
 def article(e: dict, need_id: bool = True, light: bool = False) -> str:
     e = dict(e, **{f: as_text(e.get(f)) for f in ("title", "bottom_line", "emoji") if e.get(f) is not None})
+    if DOUBT.search(f"{e.get('title')} {e.get('bottom_line')}"):
+        print(f"🚫 dropped (AI unsure): {e.get('title')!r}")
+        return ""  # ה-AI לא בטוח במה שכתב — לא מציגים
     item = resolve(e)
     if not e.get("title") or not e.get("bottom_line") or (not item and (need_id or e.get("id"))):
         print(f"🚫 dropped (no matching article): id={e.get('id')} source_title={e.get('source_title')!r}")
@@ -865,7 +943,46 @@ def short_fact(label: str, text: str) -> str:
 
 OUTCOME = re.compile(r"הודח|הודחה|הודחו|נחשף|נחשפה|נחשפו|ניצח|ניצחה|זכה|זכתה|זכו|עלו? (?:ל)?שלב|עלתה (?:ל)?שלב|"
                      r"עלו? לגמר|עלתה לגמר|נבחר|נבחרה|"
-                     r"פרש|פרשה|עזב|עזבה|נתפס|נתפסה|הדחה|גמר|אלוף|אלופה")
+                     r"פרש|פרשה|עזב|עזבה|נתפס|נתפסה|אלוף|אלופה")  # "פרק הדחה"/"אירוע הגמר" — לא תוצאה
+
+# כתבה חדשה יכולה להזכיר הדחה ישנה ("אבי שושן הודח" חזר 5 ימים אחרי, 12/11/2026) — לכן שלוש בדיקות:
+REPORTED_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reported.json")
+
+def fact_words(text: str) -> set:
+    return {w for w in re.findall(r"\w{3,}", _plain(text)) if not OUTCOME.fullmatch(w)}
+
+def fact_in_title(text: str, title: str) -> bool:
+    """העובדה כתובה בכותרת הכתבה עצמה: מילת תוצאה (הודח/נחשף/ניצח) + שם מהשורה."""
+    title = _plain(title)
+    return bool(OUTCOME.search(title)) and any(w in title for w in fact_words(text))
+
+def after_airing(item: dict, label: str, tv_last: list) -> bool:
+    """הכתבה פורסמה אחרי תחילת הפרק של אמש (לפי הלוח). בלי שעה בלוח — לא פוסלים."""
+    name = _plain(label)
+    time = next((x.get("time") for x in tv_last_items(tv_last) if x.get("time") and name and name in _plain(x.get("title"))), None)
+    if not time or not item.get("published"):
+        return True
+    h, m = map(int, time.split(":"))
+    day = datetime.now(IL_TZ).date() - timedelta(days=0 if h < 6 else 1)  # פרק שהתחיל אחרי חצות — כבר "היום"
+    return item["published"] >= datetime.combine(day, datetime.min.time(), IL_TZ).replace(hour=h, minute=m)
+
+def reported() -> list:
+    try:
+        with open(REPORTED_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return []
+
+def already_reported(label: str, text: str) -> bool:
+    words = fact_words(short_fact(label, text))
+    return bool(words) and any(_plain(r.get("show")) == _plain(label) and words <= set(r.get("words") or []) for r in reported())
+
+def remember(rows: list, today) -> None:
+    """שומר את עובדות הריאליטי שנשלחו לערוץ (14 ימים) — כדי שלא יחזרו. נקרא רק בבריף האמיתי, לא בבדיקות."""
+    keep = [r for r in reported() if r.get("date", "") >= str(today - timedelta(days=14))]
+    keep += [{"date": str(today), "show": _plain(r["label"]), "words": sorted(fact_words(r["text"]))} for r, _ in rows]
+    with open(REPORTED_FILE, "w", encoding="utf-8") as f:
+        json.dump(keep, f, ensure_ascii=False, indent=1)
 
 def schedule_line(name: str, x: dict) -> str:
     """שורה מהלוח עצמו, כשאין כתבה טרייה: מה שכתוב בכותרת הפרק ("הארנב נתפס ונחשף"), בלי ניחושים."""
@@ -910,6 +1027,13 @@ def recap_rows(key: str, rows: list, results: list = (), shown: set = frozenset(
             if not any(n in _plain(label) or _plain(label) in n for n in aired):
                 print(f"🚫 recap {key}: not aired last night: {as_text(r.get('label'))[:20]!r} {as_text(r.get('text'))[:50]!r} ids={r.get('ids')}")
                 continue  # לא שודר אמש
+            ids = [i for i in ids if fact_in_title(text, ITEMS[i]["title"]) and after_airing(ITEMS[i], label, tv_last)]
+            if ids and already_reported(label, text):
+                print(f"🚫 recap {key}: already reported this week: {label[:20]!r} {text[:50]!r}")
+                continue
+            if not ids:
+                print(f"🚫 recap {key}: outcome without an article: {label[:20]!r} {text[:50]!r}")
+                continue  # מי הודח/נחשף — רק מכתבה ("אבי שושן הודח" חזר 5 ימים אחרי, בלי מקור, 12/11/2026)
         elif not ids and not in_tv(label, [x["title"] for x in tv_last_items(tv_last)]):
             print(f"🚫 recap {key}: no article and not on TV: {as_text(r.get('label'))[:20]!r} {as_text(r.get('text'))[:50]!r} ids={r.get('ids')}")
             continue  # רק שורה שמבוססת על כתבה אמיתית או על תוכנית שבאמת בלוח השידורים
@@ -969,6 +1093,8 @@ def recap_block(key: str, rows: list, results: list = (), he: dict = {}, shown: 
                 out.append(f"• <b>הערב</b> — {esc(name)}, עונה חדשה{esc(where)}")
     return f"{icon} <b>{title}</b>\n" + "\n".join(out) if out else ""
 
+COMMON_MARKET = {"נתוני", "נתונים", "שוק", "השוק", "מניות", "מדדי", "מדד", "חששות", "דוחות", "ישיבת", "משבר"}
+
 SOURCE_NAMES = [(r"globes|גלובס", "גלובס"), (r"calcalist|כלכליסט", "כלכליסט"), (r"themarker|דה ?מרקר", "TheMarker"),
                 (r"ynet", "ynet"), (r"yahoo", "Yahoo"), (r"bloomberg", "Bloomberg")]
 
@@ -991,15 +1117,19 @@ def topic_blocks(key: str, ai: dict, shown: set | None = None) -> list:
         labels = [re.sub(r"[\"'״׳]", "", r["label"]) for r, _ in shown_rows if r["label"] != "הערב"]
     else:
         labels = []
-    out, per_source, names = [], {}, set()
+    out, per_source, names, spare = [], {}, set(), []
     titles = [set(re.findall(r"\w{4,}", as_text(e.get("title")))) for e in ai.get(key) or []]
     rare = {w for t in titles for w in t if sum(w in x for x in titles) >= 2} - COMMON if key in LIGHT else set()
     for e, words in zip(ai.get(key) or [], titles):
         if words & rare & names:
-            continue  # עוד ידיעה על אותו שחקן/כוכב — אחת מספיקה
+            continue  # עוד ידיעה על אותו שחקן/כוכב — אחת מספיקה (לא משלימים מזה: 3 ידיעות על אבדיה, 09/11/2026)
+        if key == "sport" and "אבדיה" in as_text(e.get("title")) and not re.search(r"\d", f"{e.get('title')} {e.get('bottom_line')}"):
+            continue  # אבדיה — רק עם משהו קונקרטי (נקודות, תוצאה), לא "רצף מרשים"
 
         item = resolve(e) or {}
         link, src = item.get("link"), short_source(item.get("source") or "")
+        if link not in seen and len(out) < 5 and src and per_source.get(src, 0) >= 2:
+            spare.append(e)
         if link in seen or len(out) == 5 or (src and per_source.get(src, 0) >= 2):
             continue  # עד 2 ידיעות מאותו מקור בנושא (טכנולוגיה, 09/11/2026: 4 מתוך 5 מ-Yahoo Finance)
         if any(l and l in re.sub(r"[\"'״׳]", "", e.get("title") or "") for l in labels):
@@ -1009,6 +1139,17 @@ def topic_blocks(key: str, ai: dict, shown: set | None = None) -> list:
             seen.add(link)
             per_source[src] = per_source.get(src, 0) + 1
             names |= words & rare
+    for e in spare:  # תמיד 5: אם חסר — משלימים ממה שנדחה רק בגלל "אותו מקור" (כפילות ושאר הכללים נשארים)
+        link = (resolve(e) or {}).get("link")
+        if len(out) == 5:
+            break
+        if link in seen or any(l and l in re.sub(r"[\"'״׳]", "", e.get("title") or "") for l in labels):
+            continue
+        if a := article(e, light=key in LIGHT):
+            out.append(a)
+            seen.add(link)
+    if len(out) < 5:
+        print(f"⚠️ {key}: only {len(out)} items ({len(ai.get(key) or [])} candidates)")
     return [block, *out]
 
 def render(today: datetime, market_rows: list, close_date, holdings: dict, ai: dict, channel: bool = False,
@@ -1025,7 +1166,8 @@ def render(today: datetime, market_rows: list, close_date, holdings: dict, ai: d
             if text:
                 out.append(f"• <b>{esc(label)}</b> — {esc(text)}" if label else f"• {esc(text)}")
         return out
-    words = lambda w: set(re.findall(r"\w{4,}", plain_hebrew(w.get("label")).lower()))
+    stem = lambda x: re.sub(r"^[בלהומשכ](?=\w{4})", "", x)  # "בנבידיה" = "נבידיה"
+    words = lambda w: {stem(x) for x in re.findall(r"\w{4,}", plain_hebrew(w.get("label")).lower())} - COMMON_MARKET
     watch_words = set().union(*[words(w) for w in (ai.get("watch") or [])[:2]])
     why_entries = [w for w in ai.get("market_why") or [] if not words(w) & watch_words]  # "אינפלציה" פעמיים — רק ב"לשים לב"
     why, watch = notes(why_entries), notes(ai.get("watch"))
@@ -1133,7 +1275,8 @@ def build() -> list:
     results = get_results(now)
     weekend = now.astimezone(IL_TZ).weekday() in (4, 5)  # שישי, שבת
     jobs = {key: (RULES + f"\nהנושא: {name} — {rule}\n" + (WEEKEND_ENT if key == "ent" and weekend else "")
-                  + TOPIC_FORMAT.replace("עד 7", "10 (לפחות 8 אם יש)" if key in LIGHT else "עד 7")
+                  + TOPIC_FORMAT.replace("עד 7 ידיעות לפי סדר חשיבות, ולפחות 7", "10 ידיעות לפי סדר חשיבות, ולפחות 8" if key in LIGHT
+                                       else "עד 7 ידיעות לפי סדר חשיבות, ולפחות 7")
                   + (RECAP_FORMAT.format(rule=RECAP[key][2], fields=RECAP_FIELDS[key]) if key in RECAP else ""),
                   {"articles": news[key], **({"results": results} if key == "sport" else {})})
             for key, (_, name, rule) in TOPICS.items()}
@@ -1169,13 +1312,16 @@ def build() -> list:
                 ai[f"{key}_he"] = result.get("he_names") if isinstance(result.get("he_names"), dict) else {}
     ai["sport_results"] = results
     ai["ent_tv_last"], ai["ent_tv_tonight"], ai["ent_reality"] = tv_last, tv_tonight, reality
-    count = lambda: {k: len(ai.get(k) or []) for k in ("sport", "ent")}
+    count = lambda: {k: len(ai.get(k) or []) for k in TOPICS}
     print(f"🔎 candidates: {count()}")
     drop_stale(ai, stale_links(ai, now))
     move_sporty(ai)
     print(f"🔎 after date check + sport move: {count()}")
     edit_pass(ai)
     print(f"🔎 after editor: {count()}")
+    proofread(ai)
+    if "--dry-run" not in sys.argv and not any(a.startswith("--only=") for a in sys.argv):
+        remember(recap_rows("ent", ai.get("ent_recap") or [], (), frozenset(), tv_last, tv_tonight, reality), today_il)
     print("🧠 AI returned: " + ", ".join(f"{k}: {len(v)}" for k, v in ai.items() if isinstance(v, list)) + f", insiders: {len(insiders)}")
     public, private = render(now.astimezone(IL_TZ), market_rows, close_date, holdings, ai, channel=bool(CHANNEL_ID),
                              insiders=insiders)

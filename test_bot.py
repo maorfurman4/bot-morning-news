@@ -2,6 +2,11 @@
 from datetime import datetime, timezone
 
 import bot
+import os as _os0, tempfile as _tf0
+# הבדיקות הישנות של בלוק הריאליטי משתמשות בכתבות דמה — בלי בדיקת הכותרת ובלי קובץ הזיכרון האמיתי (נבדקים בנפרד למטה)
+_real_fit, bot.fact_in_title = bot.fact_in_title, lambda text, title: True
+_real_air, bot.after_airing = bot.after_airing, lambda item, label, tv: True
+bot.REPORTED_FILE = _os0.path.join(_tf0.mkdtemp(), "none.json")
 
 now = datetime(2026, 10, 23, 12, 0, tzinfo=timezone.utc)
 
@@ -96,9 +101,9 @@ assert "כפול" not in text and text.count('href="https://x/1"') == 1 and "�
 eight = bot.register("v", [dict(own, title=f"story {n}", link=f"https://v/{n}", source=f"src{n}") for n in range(8)])
 msgs, _ = bot.render(now, ["🟢 a", "🔴 b"], None, {}, {"world": [dict(good, id=e["id"], source_title=e["title"]) for e in eight]})
 assert sum(b.startswith("🔹") for b in msgs[0]) == 5
-same = bot.register("u", [dict(own, title=f"same {n}", link=f"https://u/{n}") for n in range(4)])  # כולן BBC
+same = bot.register("u", [dict(own, title=f"same {n}", link=f"https://u/{n}", source="BBC" if n < 4 else f"o{n}") for n in range(7)])
 msgs, _ = bot.render(now, [], None, {}, {"world": [dict(good, id=e["id"], source_title=e["title"]) for e in same]})
-assert sum(b.startswith("🔹") for b in msgs[0]) == 2  # עד 2 מאותו מקור
+assert sum(b.startswith("🔹") for b in msgs[0]) == 5 and "\n".join(msgs[0]).count("· BBC") == 2  # עד 2 מאותו מקור כשיש מספיק אחרות
 table = bot.chunks(next(m for m in bot.render(now, ["🟢 a", "🔴 b"], None, {}, {})[0]))[0]
 assert "\n🔴 b</pre>" in table
 
@@ -189,7 +194,9 @@ ai = {"ent": [dict(good, id="w1", bottom_line="YNET חשף: א"), dict(good, id=
 real_ask, bot.ask_ai = bot.ask_ai, lambda s, p: {"topics": [{"key": "ent", "items": [
     {"id": "w1", "title": "א", "bottom_line": "א נקי"}, {"id": "w2", "drop": True}], "recap": [{"n": 0, "text": "y"}]}]}
 bot.edit_pass(ai)
-assert [e["bottom_line"] for e in ai["ent"]] == ["א נקי"] and ai["ent_recap"][0]["text"] == "y"
+assert ai["ent"][0]["bottom_line"] == "א נקי" and ai["ent_recap"][0]["text"] == "y"
+assert ai["ent"][-1]["title"] == "כפול"  # מתחת ל-5 — הפריט שהעורך הוריד חוזר לסוף התור (כפילות אמיתית נסננת ב-topic_blocks)
+assert sum(b.startswith("🔹") for b in bot.topic_blocks("ent", ai)) == 1
 def boom(s, p):
     raise RuntimeError("down")
 bot.ask_ai = boom
@@ -223,12 +230,12 @@ real_file, bot.SCHEDULE_FILE = bot.SCHEDULE_FILE, _os.path.join(tempfile.mkdtemp
 bot.save_tv(now.date(), tv)
 assert bot.tv_last_night(now.date() + bot.timedelta(days=1)) == tv and bot.tv_last_night(now.date()) == []
 bot.SCHEDULE_FILE = real_file
-rows = [{"label": "הישרדות", "text": "שי חי הודח", "ids": []}, {"label": "האח הגדול", "text": "המצאה", "ids": []}]
+rows = [{"label": "הישרדות", "text": "שי חי הודח", "ids": ["w1"]}, {"label": "האח הגדול", "text": "המצאה", "ids": []}]
 shown_rows = bot.recap_rows("ent", rows, tv_last=["הישרדות - פרק הדחה!"])
 assert [r["label"] for r, _ in shown_rows] == ["הישרדות"]
 # בלי כפל: ידיעה על תוכנית שכבר בבלוק — לא מוצגת
 surv = dict(good, id="w2", source_title="Iran talks", title="כוכב הישרדות מתראיין")
-blocks = bot.topic_blocks("ent", {"ent": [surv, good], "ent_recap": rows, "ent_tv_last": ["הישרדות - פרק הדחה!"]})
+blocks = bot.topic_blocks("ent", {"ent": [surv, iran], "ent_recap": rows, "ent_tv_last": ["הישרדות - פרק הדחה!"]})
 assert "שי חי הודח" in blocks[0] and len(blocks) == 2 and "הישרדות" not in blocks[1]
 
 # בידור: כתבות מחיפושי הריאליטי — לבלוק בלבד; השאר — לידיעות
@@ -326,13 +333,63 @@ mkt = "\n".join(next(m for m in pub if any("שוק ההון" in b for b in m[:2]
 assert "• <b>אינפלציה במפעלים</b> — מחירי היצרן טיפסו" in mkt and "🇨🇳" not in mkt
 # ⚽ אותו כוכב — ידיעה אחת; הדוגמה ל-AI בבלוק הספורט — לפי השדות החדשים
 avd = bot.register("d", [dict(own, title=t, link=f"https://d/{n}", source=f"s{n}") for n, t in enumerate(
-    ["דני אבדיה מציג נתון מפתיע", "פורטלנד מאשימה את וומבניאמה אחרי מהלך עם אבדיה", "אבדיה מצביע על הסיבה לקריסת פורטלנד",
+    ["דני אבדיה קלע 30 נקודות", "פורטלנד מאשימה את וומבניאמה אחרי מהלך עם אבדיה", "אבדיה מצביע על הסיבה לקריסת פורטלנד",
      "בארה\"ב מזהים בעיה אצל אבדיה", "חסון וטיאנו אלופי ישראל"])])
 msgs, _ = bot.render(now, [], None, {}, {"sport": [dict(good, id=e["id"], source_title=e["title"], title=e["title"]) for e in avd]})
 sp = "\n".join(sum(msgs, []))
 assert sp.count("אבדיה") == 1 and "חסון וטיאנו" in sp
 assert '"text"' in bot.RECAP_FORMAT.format(rule="x", fields=bot.RECAP_FIELDS["sport"])
 assert bot.short_source("Bloomberg.com") == "Bloomberg"
+# ✏️ מגיה: תיקון לשון מתקבל; שינוי מספר או אורך חריג — נדחה; כשל — הטקסט נשאר
+assert bot.safe_fix("פרצת ביינים חושפת 3 בעיות", "פרצת Binance חושפת 3 בעיות") == "פרצת Binance חושפת 3 בעיות"
+assert bot.safe_fix("עלה 3%", "עלה 5%") == "עלה 3%" and bot.safe_fix("משפט ארוך מאוד עם הרבה מילים", "קצר") == "משפט ארוך מאוד עם הרבה מילים"
+ai = {"world": [dict(good, title="פרצת ביינים", bottom_line="עלה 3%")], "headline": "כותרת",
+      "ent_recap": [{"label": "x", "text": "שורה", "ids": []}]}
+key, bot.GEMINI_API_KEY = bot.GEMINI_API_KEY, "k"
+real_g, bot.ask_gemini = bot.ask_gemini, lambda s, p: {"texts": [t.replace("ביינים", "Binance").replace("3%", "9%") for t in p["texts"]]}
+bot.proofread(ai)
+assert ai["world"][0]["title"] == "פרצת Binance" and ai["world"][0]["bottom_line"] == "עלה 3%"
+bot.ask_gemini = lambda s, p: {"texts": ["רק אחד"]}
+bot.proofread(ai)
+assert ai["world"][0]["title"] == "פרצת Binance" and bot.FAILURES[-1].startswith("• <b>מגיה")
+bot.ask_gemini, bot.GEMINI_API_KEY = real_g, key
+# 📺 "מי הודח" רק מכתבה; "אירוע הגמר" מהלוח — לא תוצאה
+tvl = [{"title": "הישרדות - פרק הדחה משוגע!"}, {"title": "דאבל על הכסף - אירוע הגמר"}]
+blk = bot.recap_block("ent", [{"label": "הישרדות", "text": "אבי שושן הודח", "ids": []}], tv_last=tvl, names=["הישרדות", "דאבל על הכסף"])
+assert blk == ""
+assert "אבי שושן הודח" in bot.recap_block("ent", [{"label": "הישרדות", "text": "אבי שושן הודח", "ids": ["w1"]}], tv_last=tvl, names=["הישרדות"])
+# 📈 נבידיה ב"לשים לב" — לא חוזרת ב"מה הזיז" גם בניסוח אחר; ⚽ אבדיה בלי מספר — לא נכנס
+ai = {"market_why": [{"label": "משבר ניהולי בנבידיה", "text": "דיווחים על ישיבה", "ids": []}, {"label": "נפט", "text": "עלה", "ids": []}],
+      "watch": [{"label": "ישיבת דירקטוריון נבידיה", "text": "בקרוב", "ids": []}]}
+pub, _ = bot.render(now, ["🟢 a"], None, {}, ai, channel=True)
+mkt = "\n".join(next(m for m in pub if any("שוק ההון" in b for b in m[:2])))
+assert "דיווחים על ישיבה" not in mkt and "נפט" in mkt and "בקרוב" in mkt
+blocks = bot.topic_blocks("sport", {"sport": [dict(good, title="דני אבדיה: רצף מרשים", bottom_line="מציג רצף"), dict(iran, title="אבדיה קלע 25 נקודות")]})
+assert len(blocks) == 2 and "25" in blocks[1]
+# 📺 ריאליטי: העובדה בכותרת הכתבה, כתבה מאחרי השידור, ולא משהו שכבר דווח
+import tempfile as _tf
+real_rep, bot.REPORTED_FILE = bot.REPORTED_FILE, _os.path.join(_tf.mkdtemp(), "r.json")
+bot.fact_in_title, bot.after_airing = _real_fit, _real_air
+assert bot.fact_in_title("אבי שושן הודח", "אבי שושן הודח מהישרדות בדרמה") and not bot.fact_in_title("אבי שושן הודח", "לאחר ההדחה: אבי שושן שולח מסר")
+arts = bot.register("k", [dict(own, title="דנה לוי הודחה מהישרדות", link="https://k/1"), dict(own, title="לאחר ההדחה: אבי שושן שולח מסר", link="https://k/2")])
+tvk = [{"title": "הישרדות - פרק הדחה"}]
+rows_k = [{"label": "הישרדות", "text": "אבי שושן הודח", "ids": ["k2"]}, {"label": "הישרדות", "text": "דנה לוי הודחה", "ids": ["k1"]}]
+got = bot.recap_rows("ent", rows_k, tv_last=tvk, names=["הישרדות"])
+assert [r["text"] for r, _ in got] == ["דנה לוי הודחה"]
+bot.remember(got, now.date())
+assert bot.already_reported("הישרדות", "דנה לוי הודחה") and bot.recap_rows("ent", rows_k, tv_last=tvk, names=["הישרדות"]) == []
+late = dict(own, published=bot.datetime.now(bot.IL_TZ) - bot.timedelta(days=3))
+assert not bot.after_airing(late, "הישרדות", [{"title": "הישרדות", "time": "21:15"}]) and bot.after_airing(late, "הישרדות", tvk)
+bot.REPORTED_FILE = real_rep
+# 🔤 שם אחיד; ידיעה שה-AI לא בטוח בה — לא מוצגת
+assert bot.plain_hebrew("מנכ\"ל אנבידיה, משבר בנבידיה") == 'מנכ"ל Nvidia, משבר ב-Nvidia'
+assert bot.article(dict(good, bottom_line="ראש הממשלה ובני גנץ/איזנקוט (לפי הכותרת) יערכו פגישה")) == ""
+# 5️⃣ תמיד 5: כשחסר — משלימים ממה שנדחה רק בגלל "אותו מקור"; כתבה כפולה עדיין לא חוזרת
+six = bot.register("f", [dict(own, title=f"fill {n}", link=f"https://f/{n}", source="BBC" if n < 4 else f"s{n}") for n in range(6)])
+blocks = bot.topic_blocks("world", {"world": [dict(good, id=e["id"], source_title=e["title"], title=e["title"]) for e in six] * 2})
+assert sum(b.startswith("🔹") for b in blocks) == 5 and "fill 5" in "\n".join(blocks)
+# ה-AI הוסיף את שם המקור לפני הכותרת — עדיין מזהים את הכתבה
+assert bot.resolve(dict(good, source_title="Reuters: Tesla falls 5%"))["link"] == "https://x/1"
 bot.FAILURES.clear()
 
 print("ok")
