@@ -700,12 +700,16 @@ PROOF = """אתה מגיה לשוני של בריף חדשות בעברית. ק�
 החזר JSON בלבד: {"texts": ["...", ...]} — אותו מספר פריטים, באותו סדר."""
 
 def ask_gemini(system: str, payload: dict) -> dict:
-    resp = requests.post(
-        f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent",
-        headers={"x-goog-api-key": GEMINI_API_KEY}, timeout=120,
-        json={"systemInstruction": {"parts": [{"text": system}]},
-              "contents": [{"role": "user", "parts": [{"text": json.dumps(payload, ensure_ascii=False)}]}],
-              "generationConfig": {"responseMimeType": "application/json", "temperature": 0}})
+    for wait in (10, 30, None):  # Gemini מחזיר לפעמים 503 (עומס) — מחכים ומנסים שוב
+        resp = requests.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent",
+            headers={"x-goog-api-key": GEMINI_API_KEY}, timeout=120,
+            json={"systemInstruction": {"parts": [{"text": system}]},
+                  "contents": [{"role": "user", "parts": [{"text": json.dumps(payload, ensure_ascii=False)}]}],
+                  "generationConfig": {"responseMimeType": "application/json", "temperature": 0}})
+        if resp.status_code not in (429, 500, 503) or wait is None:
+            break
+        time.sleep(wait)
     if not resp.ok:
         raise RuntimeError(f"Gemini {resp.status_code}: {resp.text[:200]}")
     u = resp.json().get("usageMetadata") or {}
