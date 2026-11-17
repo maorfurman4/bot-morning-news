@@ -1334,8 +1334,10 @@ OFFICE_URL = os.environ.get("SUPABASE_URL", "https://oglhuhnppdlekviodkjb.supaba
 
 def office(kind: str, text: str = "") -> None:
     """דיווח למשרד. לא מפיל את הבוט לעולם: בלי מפתח, או אם Supabase לא עונה — ממשיכים בשקט."""
-    if not OFFICE_KEY or "--dry-run" in sys.argv or any(a.startswith("--only=") for a in sys.argv):
+    if not OFFICE_KEY or "--dry-run" in sys.argv:
         return
+    if any(a.startswith("--only=") for a in sys.argv):
+        text = f"{text} (בדיקה בפרטי)"  # בדיקה ששלחה רק אליך — מופיעה במשרד, מסומנת
     try:
         requests.post(f"{OFFICE_URL}/rest/v1/bot_events", timeout=8, json={
             "bot": "news", "kind": kind, "text": text[:300],
@@ -1363,5 +1365,5 @@ if __name__ == "__main__":
         else:
             send_to_telegram(msg, chat)
     items = sum(m.count("🔹") for m in public)
-    office("done", f"נשלח לערוץ: {len(public)} הודעות, {items} ידיעות" + (f" · {len(FAILURES)} תקלות" if FAILURES else ""))
+    office("done", f"נשלח: {len(public)} הודעות, {items} ידיעות" + (f" · {len(FAILURES)} תקלות" if FAILURES else ""))
     print("🏁 Run complete.")
