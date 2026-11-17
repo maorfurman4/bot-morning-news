@@ -57,6 +57,7 @@ jobs:
       env:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}  # מגיה לשוני; בלעדיו הבריף יוצא בלי הגהה
+        SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}  # משרד הבוטים; בלעדיו הבוט פשוט לא מדווח
         TELEGRAM_TOKEN_NEWS: ${{ secrets.TELEGRAM_TOKEN_NEWS }}
         CHAT_ID_NEWS: ${{ secrets.CHAT_ID_NEWS }}
         NEWS_CHANNEL_ID: ${{ secrets.NEWS_CHANNEL_ID }}

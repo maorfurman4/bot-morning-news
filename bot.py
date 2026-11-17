@@ -1328,10 +1328,28 @@ def build() -> list:
     print("✅ shown: " + ", ".join(f"{m[1 if i == 0 else 0][:12]}: {sum(b.startswith('🔹') for b in m)}" for i, m in enumerate(public)))
     return [part for msg in public for part in chunks(msg)], [part for msg in private for part in chunks(msg)]
 
+# ── משרד הבוטים: שורה ב-Supabase (public.bot_events) בתחילת ובסוף כל הרצה אמיתית ──
+OFFICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "").strip()
+OFFICE_URL = os.environ.get("SUPABASE_URL", "https://oglhuhnppdlekviodkjb.supabase.co").strip()
+
+def office(kind: str, text: str = "") -> None:
+    """דיווח למשרד. לא מפיל את הבוט לעולם: בלי מפתח, או אם Supabase לא עונה — ממשיכים בשקט."""
+    if not OFFICE_KEY or "--dry-run" in sys.argv or any(a.startswith("--only=") for a in sys.argv):
+        return
+    try:
+        requests.post(f"{OFFICE_URL}/rest/v1/bot_events", timeout=8, json={
+            "bot": "news", "kind": kind, "text": text[:300],
+            "run_id": os.environ.get("GITHUB_RUN_ID") or None},
+            headers={"apikey": OFFICE_KEY, "Authorization": f"Bearer {OFFICE_KEY}", "Prefer": "return=minimal"})
+    except Exception as ex:
+        print(f"⚠️ office report failed: {type(ex).__name__}")
+
 if __name__ == "__main__":
+    office("start", "בריף הבוקר")
     try:
         public, private = build()
     except Exception as ex:
+        office("failed", f"{type(ex).__name__}: {str(ex)[:200]}")
         if "--dry-run" not in sys.argv:
             send_to_telegram(f"⚠️ בוט החדשות נכשל ולא שלח בריף היום:\n{esc(type(ex).__name__)}: {esc(str(ex)[:300])}")
         raise
@@ -1344,4 +1362,6 @@ if __name__ == "__main__":
             print(f"[{'channel' if chat == CHANNEL_ID and CHANNEL_ID else 'private'}]", msg, "\n" + "=" * 40)
         else:
             send_to_telegram(msg, chat)
+    items = sum(m.count("🔹") for m in public)
+    office("done", f"נשלח לערוץ: {len(public)} הודעות, {items} ידיעות" + (f" · {len(FAILURES)} תקלות" if FAILURES else ""))
     print("🏁 Run complete.")
