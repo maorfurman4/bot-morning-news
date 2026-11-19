@@ -23,6 +23,8 @@ from zoneinfo import ZoneInfo
 import requests
 import yfinance as yf
 
+from aura_report import working
+
 # =============================================================================
 # ─── הגדרות וסודות ───────────────────────────────────────────────────────────
 # =============================================================================
@@ -1245,19 +1247,35 @@ def send_to_telegram(text: str, chat_id: str = "") -> None:
         # בלי זה ההרצה ב-Actions מסומנת כהצלחה גם כשההודעה לא הגיעה
         raise RuntimeError(f"Telegram {resp.status_code}: {resp.text[:300]}")
 
+# ── AURA HQ: כל תחנה בבוט מדווחת למשרד מה היא עושה (שורה ב-Supabase, דרך aura_report.py) ──
+os.environ.setdefault("SUPABASE_URL", "https://oglhuhnppdlekviodkjb.supabase.co")
+if "--dry-run" in sys.argv:
+    os.environ["AURA_REPORT"] = "off"  # הרצה יבשה לא מדווחת לאף אחד, כמו office()
+
+def station(station_id: str, headline: str):
+    """with station(...) as st: מדווח "עובדת", ובסוף "סיימה" (st.done עם התוצאה האמיתית) או "נכשלה". לא מפיל את הבוט."""
+    return working("news", station_id, headline)
+
 def build() -> list:
     now = datetime.now(timezone.utc)
     print("📊 Market data...")
-    market_rows, close_date = get_markets()
-    holdings = get_holdings()
-    insiders = get_insiders(datetime.now(timezone.utc))
+    with station("market", "מושך מדדים, מט\"ח ומניות") as st:
+        market_rows, close_date = get_markets()
+        holdings = get_holdings()
+        st.done(f"{len(market_rows)} מדדים ו-{len(holdings)} מניות", indices=len(market_rows), holdings=len(holdings))
+    with station("insiders", "בודק קניות של בעלי עניין") as st:
+        insiders = get_insiders(datetime.now(timezone.utc))
+        st.done(f"{len(insiders)} קניות של מנהלים", buys=len(insiders))
 
     today_il = now.astimezone(IL_TZ).date()
-    tv_last, tv_tonight = tv_last_night(today_il), get_schedule(today_il)
-    if tv_tonight:
-        save_tv(today_il, tv_tonight)  # מחר בבוקר — "אמש"
-    reality = reality_names(tv_last + tv_tonight)
-    aired = [n for n, _ in reality_on(tv_last, reality)]
+    with station("tv", "קורא את לוח השידורים של yes") as st:
+        tv_last, tv_tonight = tv_last_night(today_il), get_schedule(today_il)
+        if tv_tonight:
+            save_tv(today_il, tv_tonight)  # מחר בבוקר — "אמש"
+        reality = reality_names(tv_last + tv_tonight)
+        aired = [n for n, _ in reality_on(tv_last, reality)]
+        st.done("אמש שודרו: " + ", ".join(dict.fromkeys(aired)) if aired else "אמש לא שודר ריאליטי",
+                shows=len(tv_last) + len(tv_tonight), reality=len(aired))
     print(f"📺 TV: last night {len(tv_last)}, tonight {len(tv_tonight)}, reality: {reality}, aired: {aired}")
     if aired:  # חיפוש לכל ריאליטי ששודר אמש, רק כתבות מאז תחילת הפריים טיים — במקום הרשימה הקבועה
         since = datetime.combine(today_il - timedelta(days=1), datetime.min.time(), IL_TZ).replace(hour=18)
@@ -1266,13 +1284,18 @@ def build() -> list:
             (None, gn(f'"{n}"', "he", when=f"{hours}h"), 8, n) for n in dict.fromkeys(aired)]
 
     print("📥 News...")
-    news = {cat: register(cat[0], get_feed(cat, now), now) for cat in FEEDS}
-    with ThreadPoolExecutor(8) as pool:
-        per_stock = dict(zip(HOLDINGS, pool.map(lambda h: read_feed(None, gn(f'"{h[0]}" stock'), now, 3), HOLDINGS.values())))
-    stock_news = {t: register(f"h{t}_", items) for t, items in per_stock.items()}
+    with station("collectors", "אוסף כתבות מכל המקורות") as st:
+        news = {cat: register(cat[0], get_feed(cat, now), now) for cat in FEEDS}
+        with ThreadPoolExecutor(8) as pool:
+            per_stock = dict(zip(HOLDINGS, pool.map(lambda h: read_feed(None, gn(f'"{h[0]}" stock'), now, 3), HOLDINGS.values())))
+        stock_news = {t: register(f"h{t}_", items) for t, items in per_stock.items()}
+        articles, feeds = sum(map(len, news.values())) + sum(map(len, stock_news.values())), sum(map(len, FEEDS.values()))
+        st.done(f"{articles} כתבות מ-{feeds} מקורות", articles=articles, feeds=feeds)
     print("📰 " + ", ".join(f"{k}: {len(v)}" for k, v in news.items()) + f", stocks: {sum(map(len, stock_news.values()))}")
 
-    results = get_results(now)
+    with station("scores", "מביא תוצאות ספורט רשמיות") as st:
+        results = get_results(now)
+        st.done(f"{len(results)} תוצאות", games=len(results))
     weekend = now.astimezone(IL_TZ).weekday() in (4, 5)  # שישי, שבת
     jobs = {key: (RULES + f"\nהנושא: {name} — {rule}\n" + (WEEKEND_ENT if key == "ent" and weekend else "")
                   + TOPIC_FORMAT.replace("עד 7 ידיעות לפי סדר חשיבות, ולפחות 7", "10 ידיעות לפי סדר חשיבות, ולפחות 8" if key in LIGHT
@@ -1295,36 +1318,51 @@ def build() -> list:
 
     print("🧠 Summarizing...")
     ai = {}
-    with ThreadPoolExecutor(len(jobs)) as pool:
-        futures = {key: pool.submit(ask_ai, *job) for key, job in jobs.items()}
-    for key, fut in futures.items():
-        try:
-            result = fut.result()
-        except Exception as ex:
-            fail(f"סיכום AI ({key})", ex)
-            continue
-        if key == "market":
-            ai.update(result)
-        else:
-            ai[key] = result.get("items", [])
-            if key in RECAP:
-                ai[f"{key}_recap"] = result.get("recap") or []
-                ai[f"{key}_he"] = result.get("he_names") if isinstance(result.get("he_names"), dict) else {}
+    with station("reporters", f"{len(jobs)} כתבים כותבים במקביל") as st:
+        with ThreadPoolExecutor(len(jobs)) as pool:
+            futures = {key: pool.submit(ask_ai, *job) for key, job in jobs.items()}
+        written = 0
+        for key, fut in futures.items():
+            try:
+                result = fut.result()
+            except Exception as ex:
+                fail(f"סיכום AI ({key})", ex)
+                continue
+            written += 1
+            if key == "market":
+                ai.update(result)
+            else:
+                ai[key] = result.get("items", [])
+                if key in RECAP:
+                    ai[f"{key}_recap"] = result.get("recap") or []
+                    ai[f"{key}_he"] = result.get("he_names") if isinstance(result.get("he_names"), dict) else {}
+        st.done(f"נכתבו {written} מתוך {len(jobs)} נושאים", done=written, of=len(jobs))
     ai["sport_results"] = results
     ai["ent_tv_last"], ai["ent_tv_tonight"], ai["ent_reality"] = tv_last, tv_tonight, reality
     count = lambda: {k: len(ai.get(k) or []) for k in TOPICS}
+    total = lambda: sum(count().values())
     print(f"🔎 candidates: {count()}")
-    drop_stale(ai, stale_links(ai, now))
-    move_sporty(ai)
+    with station("dates", "בודק את התאריך האמיתי של כל כתבה") as st:
+        before = total()
+        drop_stale(ai, stale_links(ai, now))
+        move_sporty(ai)
+        st.done(f"נשארו {total()} מתוך {before} ידיעות", checked=before, dropped=before - total())
     print(f"🔎 after date check + sport move: {count()}")
-    edit_pass(ai)
+    with station("editor", "עורך: כפילויות וניסוח") as st:
+        before = total()
+        edit_pass(ai)
+        st.done(f"נשארו {total()} מתוך {before} ידיעות", items=total())
     print(f"🔎 after editor: {count()}")
-    proofread(ai)
+    with station("proof", "מגיה את העברית" if GEMINI_API_KEY else "אין מפתח Gemini, מדלג על ההגהה"):
+        proofread(ai)
     if "--dry-run" not in sys.argv and not any(a.startswith("--only=") for a in sys.argv):
         remember(recap_rows("ent", ai.get("ent_recap") or [], (), frozenset(), tv_last, tv_tonight, reality), today_il)
     print("🧠 AI returned: " + ", ".join(f"{k}: {len(v)}" for k, v in ai.items() if isinstance(v, list)) + f", insiders: {len(insiders)}")
-    public, private = render(now.astimezone(IL_TZ), market_rows, close_date, holdings, ai, channel=bool(CHANNEL_ID),
-                             insiders=insiders)
+    with station("gate", "אוכף את הכללים: 5 לנושא, עד 2 למקור, בלי חזרות") as st:
+        public, private = render(now.astimezone(IL_TZ), market_rows, close_date, holdings, ai, channel=bool(CHANNEL_ID),
+                                 insiders=insiders)
+        shown = sum(b.startswith("🔹") for m in public for b in m)
+        st.done(f"{shown} ידיעות עברו את הכללים", kept=shown)
     print("✅ shown: " + ", ".join(f"{m[1 if i == 0 else 0][:12]}: {sum(b.startswith('🔹') for b in m)}" for i, m in enumerate(public)))
     return [part for msg in public for part in chunks(msg)], [part for msg in private for part in chunks(msg)]
 
@@ -1359,11 +1397,14 @@ if __name__ == "__main__":
     if only:  # בדיקה: רק הנושאים האלה, ורק אליך בפרטי — הערוץ לא מקבל כלום
         heads = [f"{TOPICS[k][0]} <b>{TOPICS[k][1]}</b>" if k in TOPICS else "📈 <b>שוק ההון</b>" for k in only]
         public, private, CHANNEL_ID = [m for m in public if any(h in m for h in heads)], [], ""
-    for msg, chat in [(m, CHANNEL_ID or CHAT_ID) for m in public] + [(m, CHAT_ID) for m in private]:
-        if "--dry-run" in sys.argv:
-            print(f"[{'channel' if chat == CHANNEL_ID and CHANNEL_ID else 'private'}]", msg, "\n" + "=" * 40)
-        else:
-            send_to_telegram(msg, chat)
+    with station("courier", "שולח את הבריף בטלגרם") as st:
+        for msg, chat in [(m, CHANNEL_ID or CHAT_ID) for m in public] + [(m, CHAT_ID) for m in private]:
+            if "--dry-run" in sys.argv:
+                print(f"[{'channel' if chat == CHANNEL_ID and CHANNEL_ID else 'private'}]", msg, "\n" + "=" * 40)
+            else:
+                send_to_telegram(msg, chat)
+        st.done(f"נשלחו {len(public)} הודעות" + (" לערוץ" if CHANNEL_ID else " בפרטי") + (f" ו-{len(private)} אליך בפרטי" if private else ""),
+                messages=len(public) + len(private))
     items = sum(m.count("🔹") for m in public)
     office("done", f"נשלח: {len(public)} הודעות, {items} ידיעות" + (f" · {len(FAILURES)} תקלות" if FAILURES else ""))
     print("🏁 Run complete.")
