@@ -697,7 +697,9 @@ EDITOR = """
 """
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+# gemini-2.5-flash shuts down 2026-12-01. Side-by-side test 2026-11-19 (20 texts x3): gemini-3.1-flash-lite fixed 8/8 and left every correct text alone,
+# cheaper than 2.5 flash. Comma-separated: the next one is tried when a model fails or is gone.
+GEMINI_MODELS = [m.strip() for m in (os.environ.get("GEMINI_MODEL") or "gemini-3.1-flash-lite,gemini-3.6-flash").split(",") if m.strip()]
 PROOF = """אתה מגיה לשוני של בריף חדשות בעברית. קיבלת רשימת טקסטים קצרים (texts). תקן בכל אחד רק לשון:
 שגיאות כתיב, דקדוק, התאם מין ומספר, סדר מילים שבור, מילה באנגלית שנתקעה באמצע משפט עברי (תרגם), צירוף חסר פשר,
 ושם מוכר שנכתב לא נכון (למשל "ביינים" → Binance, "רת'מן" → רוטמן).
@@ -707,22 +709,28 @@ PROOF = """אתה מגיה לשוני של בריף חדשות בעברית. ק�
 החזר JSON בלבד: {"texts": ["...", ...]} — אותו מספר פריטים, באותו סדר."""
 
 def ask_gemini(system: str, payload: dict) -> dict:
-    for wait in (10, 30, None):  # Gemini מחזיר לפעמים 503 (עומס) — מחכים ומנסים שוב
-        resp = requests.post(
-            f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent",
-            headers={"x-goog-api-key": GEMINI_API_KEY}, timeout=120,
-            json={"systemInstruction": {"parts": [{"text": system}]},
-                  "contents": [{"role": "user", "parts": [{"text": json.dumps(payload, ensure_ascii=False)}]}],
-                  "generationConfig": {"responseMimeType": "application/json", "temperature": 0,
-                                       "thinkingConfig": {"thinkingBudget": 0}}})  # בלי "חשיבה" — היא עלתה פי 3 מהתשובה
-        if resp.status_code not in (429, 500, 503) or wait is None:
+    last = None
+    for model in GEMINI_MODELS:
+        for wait in (10, 30, None):  # Gemini מחזיר לפעמים 503 (עומס) — מחכים ומנסים שוב
+            resp = requests.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+                headers={"x-goog-api-key": GEMINI_API_KEY}, timeout=120,
+                json={"systemInstruction": {"parts": [{"text": system}]},
+                      "contents": [{"role": "user", "parts": [{"text": json.dumps(payload, ensure_ascii=False)}]}],
+                      "generationConfig": {"responseMimeType": "application/json", "temperature": 0,
+                                           "thinkingConfig": {"thinkingBudget": 0}}})  # בלי "חשיבה" — היא עלתה פי 3 מהתשובה
+            if resp.status_code not in (429, 500, 503) or wait is None:
+                break
+            time.sleep(wait)
+        if resp.ok:
             break
-        time.sleep(wait)
-    if not resp.ok:
-        raise RuntimeError(f"Gemini {resp.status_code}: {resp.text[:200]}")
+        last = f"Gemini {model} {resp.status_code}: {resp.text[:200]}"
+        print(f"⚠️ {last} — trying next model")
+    else:
+        raise RuntimeError(last)
     u = resp.json().get("usageMetadata") or {}
-    ai_used(GEMINI_MODEL, u)
-    print(f"💰 Gemini {GEMINI_MODEL}: in={u.get('promptTokenCount')} out={u.get('candidatesTokenCount')} thoughts={u.get('thoughtsTokenCount')}")
+    ai_used(model, u)
+    print(f"💰 Gemini {model}: in={u.get('promptTokenCount')} out={u.get('candidatesTokenCount')} thoughts={u.get('thoughtsTokenCount')}")
     return json.loads(resp.json()["candidates"][0]["content"]["parts"][0]["text"])
 
 def safe_fix(old: str, new) -> str:
