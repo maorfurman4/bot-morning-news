@@ -138,6 +138,11 @@ def fake_post(*a, **k):
     return r
 real_post, bot.requests.post = bot.requests.post, fake_post
 assert bot.ask_ai("s", {}) == {"items": []} and not tries
+import aura_report  # AURA HQ: the call counts for the open station, under the model that answered (the fallback)
+aura_report._open.append(("news", "editor"))
+tries = [bot.requests.ConnectionError("dropped"), Ok()]
+assert bot.ask_ai("s", {}) == {"items": []} and [m["model"] for m in aura_report._take_usage("news", "editor")] == [bot.MODELS[1]]
+aura_report._open.clear()
 bot.requests.post = real_post
 
 # 📺 בלוק "אמש" בראש הבידור/ספורט; שורה בלי כתבה אמיתית לא מוצגת; ריק → אין בלוק
