@@ -11,6 +11,10 @@ on:
         description: "תצוגה מקדימה — מדפיס ללוג, לא שולח לטלגרם"
         type: boolean
         default: false
+      ai_models:
+        description: "TEST ONLY: OpenAI models, comma separated (empty = the bot's default)"
+        type: string
+        default: ""
       test_topics:
         description: "בדיקה בפרטי: רק הנושאים האלה (למשל sport,ent), נשלח רק אליך — לא לערוץ"
         type: string
@@ -56,6 +60,7 @@ jobs:
       if: env.SKIP != '1'
       env:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        AI_MODELS: ${{ inputs.ai_models }}
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}  # מגיה לשוני; בלעדיו הבריף יוצא בלי הגהה
         TELEGRAM_TOKEN_NEWS: ${{ secrets.TELEGRAM_TOKEN_NEWS }}
         CHAT_ID_NEWS: ${{ secrets.CHAT_ID_NEWS }}
