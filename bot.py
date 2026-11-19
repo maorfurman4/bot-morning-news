@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo
 import requests
 import yfinance as yf
 
-from aura_report import working
+from aura_report import ai as ai_used, working
 
 # =============================================================================
 # ─── הגדרות וסודות ───────────────────────────────────────────────────────────
@@ -721,6 +721,7 @@ def ask_gemini(system: str, payload: dict) -> dict:
     if not resp.ok:
         raise RuntimeError(f"Gemini {resp.status_code}: {resp.text[:200]}")
     u = resp.json().get("usageMetadata") or {}
+    ai_used(GEMINI_MODEL, u)
     print(f"💰 Gemini {GEMINI_MODEL}: in={u.get('promptTokenCount')} out={u.get('candidatesTokenCount')} thoughts={u.get('thoughtsTokenCount')}")
     return json.loads(resp.json()["candidates"][0]["content"]["parts"][0]["text"])
 
@@ -834,6 +835,7 @@ def ask_ai(system: str, payload: dict) -> dict:
                                  json=body, timeout=300)
         if resp.ok:
             u = resp.json().get("usage") or {}
+            ai_used(model, u)
             d = USAGE.setdefault(model, {"calls": 0, "in": 0, "out": 0, "reasoning": 0, "cached": 0})
             d["calls"] += 1
             d["in"] += u.get("prompt_tokens") or 0
