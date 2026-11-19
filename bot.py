@@ -38,7 +38,10 @@ MAX_AGE = timedelta(hours=26)
 PER_TOPIC = 50   # תקרה לנושא — עוד מקורות = יותר גיוון, לא יותר טוקנים
 PER_FEED = 6     # כמה כתבות לקחת מכל מקור (לפי הסדר של המקור עצמו) — מספיק ל-5–8 ידיעות לנושא
 DRAMATIC = 3.0   # % — מניה שזזה יותר מזה מקבלת הסבר
-MODELS = ["gpt-5-mini", "gpt-4o-mini"]  # הראשון שעובד עם המפתח; mini — בערך חמישית מהמחיר
+MODELS = [m.strip() for m in (os.environ.get("AI_MODELS") or "gpt-6.1-terra,gpt-6-luna").split(",") if m.strip()]
+# per 1M tokens: input, cached input, output (OpenAI pricing page, 2026-11-19)
+PRICES = {"gpt-5-mini": (0.25, 0.025, 2.0), "gpt-4o-mini": (0.15, 0.075, 0.6), "gpt-6-luna": (0.10, 0.01, 0.5), "gpt-6.1-terra": (1.0, 0.05, 5.0)}
+USAGE: dict = {}  # הראשון שעובד עם המפתח; mini — בערך חמישית מהמחיר
 
 # (סימול, שם, סוג) — הסוג קובע איך מציגים את השינוי. שמות בעברית כדי שהשורה תישאר מימין לשמאל
 MARKETS = [
@@ -483,7 +486,7 @@ TOPICS = {
               "לא כתבת דעה כללית; (2) ספורטאים ישראלים בתחרויות בינלאומיות (ג'ודו, אולימפיאדה, אליפויות עולם/אירופה) — "
               "מדליה או הישג תמיד נכנסים; (3) כדורגל וכדורסל ישראלי ויורוליג — רק סיפורים מעניינים או משחקים חשובים, "
               "ואז עם התוצאה; (4) NBA ו-כדורגל עולמי — רק על הכוכבים הגדולים באמת (רונאלדו, מסי, לברון וכו') או אירועים "
-              "גדולים. יורוליג, NBA וכדורסל בכלל — רק כשיש קשר לישראלים (קבוצה ישראלית, שחקן ישראלי). אסור: קבוצות חלשות, מאבקי תחתית/ירידה, הרכבים צפויים, שחקנים שוליים, תוצאות סתמיות — גם אם חסרות ידיעות. כמה כתבות על אותו שחקן או קבוצה — "
+              "גדולים. יורוליג, NBA וכדורסל בכלל — רק כשיש קשר לישראלים (קבוצה ישראלית, שחקן ישראלי). אסור: קבוצות חלשות, מאבקי תחתית/ירידה, הרכבים צפויים, שחקנים שוליים, תוצאות סתמיות — לא בראש הרשימה. אם אין מספיק ידיעות טובות, השלם עד 8 לפחות מהנותרות והצב אותן בסוף. כמה כתבות על אותו שחקן או קבוצה — "
               "ידיעה אחת. תוצאות ומספרים — רק כמו שכתוב בכתבה. "
               "טון קליל וזורם, כמו מוסף ספורט — כותרות עם חיוך ופאנץ', אבל העובדות מדויקות. "
               "bottom_line: משפט או שניים קלילים (עד 40 מילים) עם העובדה המרכזית ופרט קונקרטי — מספר, שם, או מה הלאה. "
@@ -812,7 +815,7 @@ def ask_ai(system: str, payload: dict) -> dict:
                 {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
             ],
         }
-        body.update({"reasoning_effort": "low"} if model.startswith("gpt-5") else {"temperature": 0.2})
+        body.update({"reasoning_effort": "low"} if model.startswith(("gpt-5", "gpt-6")) else {"temperature": 0.2})
         try:
             resp = requests.post(
                 "https://api.openai.com/v1/chat/completions",
@@ -823,7 +826,20 @@ def ask_ai(system: str, payload: dict) -> dict:
             last_error = f"{model}: {type(ex).__name__}"
             print(f"⚠️ {last_error} — trying next model")
             continue
+        if not resp.ok and resp.status_code == 400 and ("reasoning_effort" in resp.text or "temperature" in resp.text):
+            print(f"⚠️ {model}: rejected a setting ({resp.text[:120]}); retrying without it")
+            body.pop("reasoning_effort", None), body.pop("temperature", None)
+            resp = requests.post("https://api.openai.com/v1/chat/completions",
+                                 headers={"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"},
+                                 json=body, timeout=300)
         if resp.ok:
+            u = resp.json().get("usage") or {}
+            d = USAGE.setdefault(model, {"calls": 0, "in": 0, "out": 0, "reasoning": 0, "cached": 0})
+            d["calls"] += 1
+            d["in"] += u.get("prompt_tokens") or 0
+            d["out"] += u.get("completion_tokens") or 0
+            d["reasoning"] += (u.get("completion_tokens_details") or {}).get("reasoning_tokens") or 0
+            d["cached"] += (u.get("prompt_tokens_details") or {}).get("cached_tokens") or 0
             return json.loads(resp.json()["choices"][0]["message"]["content"])
         last_error = f"{model}: {resp.status_code} {resp.text[:150]}"
         print(f"⚠️ {last_error} — trying next model")
@@ -863,7 +879,7 @@ JARGON = [(r"\b([בלהומשכו]?)א?נבידיה\b", lambda m: (m.group(1) + 
 
 def plain_hebrew(text) -> str:
     """ז'רגון ותרגומים עקומים → עברית ("CFO" → סמנכ"ל הכספים, "לוק-אפ" → תום תקופת החסימה) — ה-AI לא תמיד מקשיב."""
-    text = re.sub("[\U0001F1E6-\U0001F1FF]", "", as_text(text))  # בלי דגלים
+    text = re.sub("[\U0001F1E6-\U0001F1FF]", "", as_text(text)).replace("״", '"')  # בלי דגלים; ת״א → ת"א
     for pat, he in JARGON:
         text = re.sub(pat, he, text)
     return text
@@ -1407,4 +1423,8 @@ if __name__ == "__main__":
                 messages=len(public) + len(private))
     items = sum(m.count("🔹") for m in public)
     office("done", f"נשלח: {len(public)} הודעות, {items} ידיעות" + (f" · {len(FAILURES)} תקלות" if FAILURES else ""))
+    for m, d in USAGE.items():
+        pin, pc, pout = PRICES.get(m, (0, 0, 0))
+        cost = ((d["in"] - d["cached"]) * pin + d["cached"] * pc + d["out"] * pout) / 1e6
+        print(f"💰 AI USAGE {m}: calls={d['calls']} in={d['in']} cached={d['cached']} out={d['out']} (of which reasoning={d['reasoning']}) cost=${cost:.4f}")
     print("🏁 Run complete.")
