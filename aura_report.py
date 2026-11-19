@@ -15,7 +15,14 @@ Station ids must match office/public/js/aura.config.js.
 """
 import json
 import os
+import ssl
 import urllib.request
+
+try:  # a Python without system certificates (a Mac install) still verifies, with certifi's list when it is there
+    import certifi
+    _TLS = ssl.create_default_context(cafile=certifi.where())
+except Exception:
+    _TLS = None
 
 STATUSES = ('idle', 'working', 'done', 'error')
 
@@ -34,7 +41,7 @@ def station(bot, station_id, status, headline=None, metrics=None, handoff_to=Non
         req = urllib.request.Request(
             url.rstrip('/') + '/rest/v1/bot_events', data=json.dumps(row).encode(), method='POST',
             headers={'apikey': key, 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'Prefer': 'return=minimal'})
-        urllib.request.urlopen(req, timeout=2.5).close()
+        urllib.request.urlopen(req, timeout=2.5, context=_TLS).close()
         return True
     except Exception:
         return False
