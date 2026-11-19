@@ -1,7 +1,8 @@
 """AURA HQ reporter for the Python bots. No dependencies. Copy this one file next to the bot's code.
 
 It writes one row per station event to Supabase (public.bot_events), which the office reads.
-Needs SUPABASE_URL and SUPABASE_SERVICE_KEY in the environment; without them it does nothing.
+Needs SUPABASE_URL and SUPABASE_SERVICE_KEY in the environment (or AURA_SUPABASE_URL and AURA_SUPABASE_KEY, which
+win when both exist); without them it does nothing.
 It never raises and never waits more than 2.5 seconds: the office must not be able to break a bot.
 
     from aura_report import working
@@ -15,7 +16,9 @@ Station ids must match office/public/js/aura.config.js.
 """
 import json
 import os
+import re
 import ssl
+import time
 import urllib.request
 
 try:  # a Python without system certificates (a Mac install) still verifies, with certifi's list when it is there
@@ -28,6 +31,13 @@ STATUSES = ('idle', 'working', 'done', 'error')
 
 
 _announced = False
+_quiet_until = 0.0  # after a failed report the office is left alone for a minute, so a bot never pays the timeout twice in a row
+
+
+def _config():
+    """AURA_SUPABASE_URL / AURA_SUPABASE_KEY win, for a bot whose own SUPABASE_* variables point at another project."""
+    return (os.environ.get('AURA_SUPABASE_URL') or os.environ.get('SUPABASE_URL'),
+            os.environ.get('AURA_SUPABASE_KEY') or os.environ.get('SUPABASE_SERVICE_KEY'))
 
 
 def _announce(url, key):
@@ -43,9 +53,10 @@ def _announce(url, key):
 
 def station(bot, station_id, status, headline=None, metrics=None, handoff_to=None, worker_type=None):
     """Report one event. Returns True if the office got it."""
-    url, key = os.environ.get('SUPABASE_URL'), os.environ.get('SUPABASE_SERVICE_KEY')
+    global _quiet_until
+    url, key = _config()
     _announce(url, key)  # at the first report, not at import: a bot may set its defaults after importing this file
-    if not url or not key or status not in STATUSES or os.environ.get('AURA_REPORT') == 'off':
+    if not url or not key or status not in STATUSES or os.environ.get('AURA_REPORT') == 'off' or time.time() < _quiet_until:
         return False
     row = {
         'bot': bot, 'kind': 'station', 'station_id': station_id, 'status': status,
@@ -59,7 +70,15 @@ def station(bot, station_id, status, headline=None, metrics=None, handoff_to=Non
         urllib.request.urlopen(req, timeout=2.5, context=_TLS).close()
         return True
     except Exception:
+        _quiet_until = time.time() + 60
         return False
+
+
+def _safe(exc_type, exc):
+    """An error's summary without what an exception text can carry: URLs (a Telegram URL holds the bot token) and long tokens."""
+    text = re.sub(r'https?://\S+', '[url]', str(exc))
+    text = re.sub(r'\S{24,}', '[...]', text)
+    return f'{exc_type.__name__}: {text}'[:160]
 
 
 class working:
@@ -81,7 +100,7 @@ class working:
 
     def __exit__(self, exc_type, exc, tb):
         if exc_type is not None:
-            station(self.bot, self.station_id, 'error', f'{exc_type.__name__}: {exc}', **self.kw)
+            station(self.bot, self.station_id, 'error', _safe(exc_type, exc), **self.kw)
         elif not self.closed:
             self.done()
         return False
@@ -93,6 +112,7 @@ if __name__ == '__main__':   # python aura_report.py : self-check, no network
     os.environ.update(SUPABASE_URL='http://127.0.0.1:9', SUPABASE_SERVICE_KEY='x')
     assert station('news', 'market', 'nonsense') is False
     assert station('news', 'market', 'working', 'x') is False, 'an unreachable office must not raise'
+    assert _quiet_until > time.time(), 'after a failure the office is left alone for a while'
     try:
         with working('news', 'market', 'x'):
             raise ValueError('boom')
@@ -100,4 +120,5 @@ if __name__ == '__main__':   # python aura_report.py : self-check, no network
         pass
     else:
         raise AssertionError('the bot error must pass through')
+    assert 'SECRET' not in _safe(ValueError, ValueError('failed https://api.telegram.org/bot123:SECRETSECRET/send key=SECRETSECRETSECRETSECRETSECRET'))
     print('ok: aura_report')
