@@ -27,9 +27,24 @@ except Exception:
 STATUSES = ('idle', 'working', 'done', 'error')
 
 
+_announced = False
+
+
+def _announce(url, key):
+    """One line in the run's log, at the first report: is telemetry on, and if not, why."""
+    global _announced
+    if _announced:
+        return
+    _announced = True
+    why = ('AURA_REPORT=off' if os.environ.get('AURA_REPORT') == 'off' else 'missing SUPABASE_URL' if not url
+           else 'missing SUPABASE_SERVICE_KEY' if not key else '')
+    print(f'[AURA] Telemetry disabled: {why}' if why else '[AURA] Telemetry enabled', flush=True)
+
+
 def station(bot, station_id, status, headline=None, metrics=None, handoff_to=None, worker_type=None):
     """Report one event. Returns True if the office got it."""
     url, key = os.environ.get('SUPABASE_URL'), os.environ.get('SUPABASE_SERVICE_KEY')
+    _announce(url, key)  # at the first report, not at import: a bot may set its defaults after importing this file
     if not url or not key or status not in STATUSES or os.environ.get('AURA_REPORT') == 'off':
         return False
     row = {
