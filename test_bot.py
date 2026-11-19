@@ -391,6 +391,39 @@ blocks = bot.topic_blocks("world", {"world": [dict(good, id=e["id"], source_titl
 assert sum(b.startswith("🔹") for b in blocks) == 5 and "fill 5" in "\n".join(blocks)
 # ה-AI הוסיף את שם המקור לפני הכותרת — עדיין מזהים את הכתבה
 assert bot.resolve(dict(good, source_title="Reuters: Tesla falls 5%"))["link"] == "https://x/1"
+# 🏢 משרד הבוטים: בלי מפתח — לא שולח כלום ולא נופל; עם מפתח ו-Supabase שנופל — ממשיך
+posts = []
+real_post = bot.requests.post
+bot.requests.post = lambda *a, **k: posts.append(k["json"])
+bot.OFFICE_KEY = ""
+bot.office("start", "x")
+assert posts == []
+bot.OFFICE_KEY = "k"
+bot.office("done", "נשלח")
+assert posts[-1]["bot"] == "news" and posts[-1]["kind"] == "done"
+def down(*a, **k):
+    raise bot.requests.ConnectionError("down")
+bot.requests.post = down
+bot.office("done", "x")  # לא זורק
+bot.requests.post, bot.OFFICE_KEY = real_post, ""
 bot.FAILURES.clear()
+
+# AURA HQ: תחנה מדווחת "עובדת" ואז "סיימה" עם התוצאה; חריגה מדווחת "נכשלה" ועוברת הלאה כמו שהיא
+import aura_report as _ar
+_sent, _real_station = [], _ar.station
+_ar.station = lambda b, sid, status, headline=None, metrics=None, *a, **k: _sent.append((b, sid, status, headline, metrics))
+with bot.station("market", "מושך") as _st:
+    _st.done("8 מדדים", indices=8)
+assert _sent == [("news", "market", "working", "מושך", None), ("news", "market", "done", "8 מדדים", {"indices": 8})], _sent
+_sent.clear()
+try:
+    with bot.station("tv", "קורא"):
+        raise ValueError("boom")
+except ValueError:
+    pass
+else:
+    raise AssertionError("a station must not swallow the bot's error")
+assert [e[2] for e in _sent] == ["working", "error"] and "boom" in _sent[1][3], _sent
+_ar.station = _real_station
 
 print("ok")
