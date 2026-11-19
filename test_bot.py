@@ -359,6 +359,21 @@ bot.ask_gemini = lambda s, p: {"texts": ["רק אחד"]}
 bot.proofread(ai)
 assert ai["world"][0]["title"] == "פרצת Binance" and bot.FAILURES[-1].startswith("• <b>מגיה")
 bot.ask_gemini, bot.GEMINI_API_KEY = real_g, key
+# the first Gemini model is gone (404): the next one answers; both gone: an error
+class _G:
+    def __init__(self, code): self.status_code, self.ok, self.text = code, code == 200, "x"
+    def json(self): return {"usageMetadata": {}, "candidates": [{"content": {"parts": [{"text": '{"texts": ["א"]}'}]}}]}
+_calls = []
+real_post, bot.requests.post = bot.requests.post, lambda url, **k: (_calls.append(url), _G(404 if "model-a" in url else 200))[1]
+real_models, bot.GEMINI_MODELS = bot.GEMINI_MODELS, ["model-a", "model-b"]
+assert bot.ask_gemini("s", {"texts": ["x"]}) == {"texts": ["א"]} and "model-b" in _calls[-1] and len(_calls) == 2
+bot.requests.post = lambda url, **k: _G(404)
+try:
+    bot.ask_gemini("s", {"texts": ["x"]})
+    raise SystemExit("expected an error when every model fails")
+except RuntimeError as ex:
+    assert "model-b 404" in str(ex)
+bot.requests.post, bot.GEMINI_MODELS = real_post, real_models
 # 📺 "מי הודח" רק מכתבה; "אירוע הגמר" מהלוח — לא תוצאה
 tvl = [{"title": "הישרדות - פרק הדחה משוגע!"}, {"title": "דאבל על הכסף - אירוע הגמר"}]
 blk = bot.recap_block("ent", [{"label": "הישרדות", "text": "אבי שושן הודח", "ids": []}], tv_last=tvl, names=["הישרדות", "דאבל על הכסף"])
