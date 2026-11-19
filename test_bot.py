@@ -45,7 +45,8 @@ own = {"title": "Rain in Tel Aviv", "summary": "Heavy rain expected tomorrow", "
 sent = bot.register("z", [dup, own])
 assert "summary" not in sent[0] and sent[1]["summary"] == "Heavy rain expected tomorrow"
 assert bot.register("y", [own], now + bot.timedelta(hours=5))[0]["age_hours"] == 5  # ה-AI יודע כמה הכתבה טרייה
-assert bot.MODELS[0] == "gpt-5-mini"
+assert bot.MODELS == ["gpt-6.1-terra", "gpt-6-luna"]  # gpt-5-mini and gpt-4o-mini are shut down on 2026-12-11 / 2027-01-14
+assert bot.plain_hebrew("ת״א 35 ונאסד״ק") == 'ת"א 35 ונאסד"ק'
 
 # פורמט שוק
 assert bot.fmt_market("Nasdaq", "index", 7663.43, 7757.3) == "🔴 Nasdaq     7,663  ▼1.21%"
