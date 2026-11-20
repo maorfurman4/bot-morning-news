@@ -63,6 +63,10 @@ assert bot.article(good) == (
 mixed = dict(good, id="w2")  # ה-AI התבלבל ב-id — מתוקן לפי source_title
 assert 'href="https://x/1"' in bot.article(mixed)
 assert bot.article(dict(good, source_title="המצאה")) == ""  # אין כתבה כזו — לא מוצג
+# light topics (sport, ent): an empty line under the title is fine (title and link only); other topics still need it
+assert bot.article(dict(good, bottom_line=""), light=True).splitlines()[0].startswith("🔹") and "🔗" in bot.article(dict(good, bottom_line=""), light=True)
+assert "\n💡" not in bot.article(dict(good), light=True) and bot.article(dict(good, bottom_line="")) == ""
+assert not [f for f in bot.FEEDS["ai"] + bot.FEEDS["tech"] if f[0] == "TechCrunch"]  # no direct TechCrunch feeds left
 assert "🔗" not in bot.article({"id": None, "title": "MBLY", "bottom_line": "אין סיבה"}, need_id=False)
 
 # פיצול הודעות ארוכות; כל שורה מתחילה בתו כיוון מימין לשמאל

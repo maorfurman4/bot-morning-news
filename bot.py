@@ -99,7 +99,7 @@ FEEDS = {
         (None, gn("site:jpost.com")),
     ],
     "ai": [
-        ("TechCrunch", "https://techcrunch.com/category/artificial-intelligence/feed/"),
+        (None, gn("site:techcrunch.com artificial intelligence")),  # the site itself answers 403 to GitHub (20/11/2026)
         ("MIT Technology Review", "https://www.technologyreview.com/topic/artificial-intelligence/feed"),
         ("Ars Technica", "https://arstechnica.com/ai/feed/"),
         ("Wired", "https://www.wired.com/feed/tag/ai/latest/rss"),
@@ -111,7 +111,7 @@ FEEDS = {
     ],
     "tech": [
         ("BBC", "https://feeds.bbci.co.uk/news/technology/rss.xml"),
-        ("TechCrunch", "https://techcrunch.com/category/robotics/feed/"),
+        (None, gn("site:techcrunch.com robotics")),
         ("IEEE Spectrum", "https://spectrum.ieee.org/feeds/topic/robotics.rss"),
         ("Ars Technica", "https://feeds.arstechnica.com/arstechnica/index"),
         ("Wired", "https://www.wired.com/feed/rss"),
@@ -489,7 +489,8 @@ TOPICS = {
               "גדולים. יורוליג, NBA וכדורסל בכלל — רק כשיש קשר לישראלים (קבוצה ישראלית, שחקן ישראלי). אסור: קבוצות חלשות, מאבקי תחתית/ירידה, הרכבים צפויים, שחקנים שוליים, תוצאות סתמיות — לא בראש הרשימה. אם אין מספיק ידיעות טובות, השלם עד 8 לפחות מהנותרות והצב אותן בסוף. כמה כתבות על אותו שחקן או קבוצה — "
               "ידיעה אחת. תוצאות ומספרים — רק כמו שכתוב בכתבה. "
               "טון קליל וזורם, כמו מוסף ספורט — כותרות עם חיוך ופאנץ', אבל העובדות מדויקות. "
-              "bottom_line: משפט או שניים קלילים (עד 40 מילים) עם העובדה המרכזית ופרט קונקרטי — מספר, שם, או מה הלאה. "
+              "bottom_line: משפט אחד קליל (עד 30 מילים) שמוסיף פרט שלא כתוב בכותרת — מספר, שם, סיבה או מה הלאה — מתוך הכתבה. "
+              "אם בכתבה אין פרט נוסף, החזר bottom_line ריק (\"\") — לא לחזור על הכותרת במילים אחרות. "
               "בלי \"המשמעות\" ובלי ניתוח."),
     "ent": ("🎬", "בידור וריאליטי",
             "סיפור על ספורטאים, קבוצות או הנבחרת — שייך לספורט ולא לכאן, גם אם יש בו מילה כמו \"האח הגדול\". "
@@ -497,7 +498,8 @@ TOPICS = {
             "ומהעולם רק הכי גדולים. רכילות מותרת בלי פילטרים (פרידות, קשרים, סקנדלים) — אבל רק עובדות שכתובות בכתבה, "
             "בלי להמציא. מדי פעם, כשיוצאת סדרה או סרט גדולים או מוערכים מאוד — גם זה. "
             "טון קליל וזורם, כמו מוסף סוף שבוע — כותרות עם חיוך ופאנץ'. "
-            "bottom_line: משפט או שניים קלילים (עד 40 מילים) עם העובדה המרכזית ופרט קונקרטי — מספר, שם, או מה הלאה. "
+            "bottom_line: משפט אחד קליל (עד 30 מילים) שמוסיף פרט שלא כתוב בכותרת — מספר, שם, סיבה או מה הלאה — מתוך הכתבה. "
+              "אם בכתבה אין פרט נוסף, החזר bottom_line ריק (\"\") — לא לחזור על הכותרת במילים אחרות. "
               "בלי \"המשמעות\" ובלי ניתוח."),
 }
 
@@ -915,13 +917,17 @@ def article(e: dict, need_id: bool = True, light: bool = False) -> str:
         print(f"🚫 dropped (AI unsure): {e.get('title')!r}")
         return ""  # ה-AI לא בטוח במה שכתב — לא מציגים
     item = resolve(e)
-    if not e.get("title") or not e.get("bottom_line") or (not item and (need_id or e.get("id"))):
+    # a light item may have no line under the title (the model had no new detail); every other item needs one
+    if not e.get("title") or (not e.get("bottom_line") and not light) or (not item and (need_id or e.get("id"))):
         print(f"🚫 dropped (no matching article): id={e.get('id')} source_title={e.get('source_title')!r}")
         return ""  # פריט שלא מתאים לכתבה אמיתית — לא מציגים
     emoji = re.sub("[\U0001F1E6-\U0001F1FF]", "", e.get("emoji") or "")  # בלי דגלים
-    out = f"🔹 <b>{esc(emoji) + ' ' if emoji.strip() else ''}{esc(plain_hebrew(e['title']))}</b>\n" + (
-        esc(clean_text(e["bottom_line"], e["title"])) if light
-        else f"💡 <i>השורה התחתונה:</i> {esc(clean_text(e['bottom_line'], e['title']))}")
+    out = f"🔹 <b>{esc(emoji) + ' ' if emoji.strip() else ''}{esc(plain_hebrew(e['title']))}</b>"
+    if light:
+        body = clean_text(e.get("bottom_line") or "", e["title"])
+        out += f"\n{esc(body)}" if body else ""
+    else:
+        out += f"\n💡 <i>השורה התחתונה:</i> {esc(clean_text(e['bottom_line'], e['title']))}"
     if item:
         out += f"\n🔗 <a href=\"{esc(item['link'])}\">לקריאת הכתבה המלאה</a> · {esc(item['source'])}"
     return out
