@@ -99,7 +99,7 @@ FEEDS = {
         (None, gn("site:jpost.com")),
     ],
     "ai": [
-        ("TechCrunch", "https://techcrunch.com/category/artificial-intelligence/feed/"),
+        (None, gn("site:techcrunch.com artificial intelligence")),  # the site itself answers 403 to GitHub (20/11/2026)
         ("MIT Technology Review", "https://www.technologyreview.com/topic/artificial-intelligence/feed"),
         ("Ars Technica", "https://arstechnica.com/ai/feed/"),
         ("Wired", "https://www.wired.com/feed/tag/ai/latest/rss"),
@@ -111,7 +111,7 @@ FEEDS = {
     ],
     "tech": [
         ("BBC", "https://feeds.bbci.co.uk/news/technology/rss.xml"),
-        ("TechCrunch", "https://techcrunch.com/category/robotics/feed/"),
+        (None, gn("site:techcrunch.com robotics")),
         ("IEEE Spectrum", "https://spectrum.ieee.org/feeds/topic/robotics.rss"),
         ("Ars Technica", "https://feeds.arstechnica.com/arstechnica/index"),
         ("Wired", "https://www.wired.com/feed/rss"),
@@ -489,7 +489,8 @@ TOPICS = {
               "גדולים. יורוליג, NBA וכדורסל בכלל — רק כשיש קשר לישראלים (קבוצה ישראלית, שחקן ישראלי). אסור: קבוצות חלשות, מאבקי תחתית/ירידה, הרכבים צפויים, שחקנים שוליים, תוצאות סתמיות — לא בראש הרשימה. אם אין מספיק ידיעות טובות, השלם עד 8 לפחות מהנותרות והצב אותן בסוף. כמה כתבות על אותו שחקן או קבוצה — "
               "ידיעה אחת. תוצאות ומספרים — רק כמו שכתוב בכתבה. "
               "טון קליל וזורם, כמו מוסף ספורט — כותרות עם חיוך ופאנץ', אבל העובדות מדויקות. "
-              "bottom_line: משפט או שניים קלילים (עד 40 מילים) עם העובדה המרכזית ופרט קונקרטי — מספר, שם, או מה הלאה. "
+              "bottom_line: משפט אחד קליל (עד 30 מילים) שמוסיף פרט שלא כתוב בכותרת — מספר, שם, סיבה או מה הלאה — מתוך הכתבה. "
+              "אם בכתבה אין פרט נוסף, החזר bottom_line ריק (\"\") — לא לחזור על הכותרת במילים אחרות. "
               "בלי \"המשמעות\" ובלי ניתוח."),
     "ent": ("🎬", "בידור וריאליטי",
             "סיפור על ספורטאים, קבוצות או הנבחרת — שייך לספורט ולא לכאן, גם אם יש בו מילה כמו \"האח הגדול\". "
@@ -497,7 +498,8 @@ TOPICS = {
             "ומהעולם רק הכי גדולים. רכילות מותרת בלי פילטרים (פרידות, קשרים, סקנדלים) — אבל רק עובדות שכתובות בכתבה, "
             "בלי להמציא. מדי פעם, כשיוצאת סדרה או סרט גדולים או מוערכים מאוד — גם זה. "
             "טון קליל וזורם, כמו מוסף סוף שבוע — כותרות עם חיוך ופאנץ'. "
-            "bottom_line: משפט או שניים קלילים (עד 40 מילים) עם העובדה המרכזית ופרט קונקרטי — מספר, שם, או מה הלאה. "
+            "bottom_line: משפט אחד קליל (עד 30 מילים) שמוסיף פרט שלא כתוב בכותרת — מספר, שם, סיבה או מה הלאה — מתוך הכתבה. "
+              "אם בכתבה אין פרט נוסף, החזר bottom_line ריק (\"\") — לא לחזור על הכותרת במילים אחרות. "
               "בלי \"המשמעות\" ובלי ניתוח."),
 }
 
@@ -688,8 +690,8 @@ EDITOR = """
    בתוכנית עצמה (רק מזכירה אותה, למשל "הוזכר בהקשר של...") — drop.
 2. מחק פתיחות כמו "YNET חשף", "הכתבה מציינת", "לפי הדיווח", זמני פרסום ("פורסם לפני X שעות") והתווית "המשמעות:".
 3. טון: בספורט ובבידור — קליל וזורם; בשאר — ענייני ומדויק.
-   בכל נושא — לא להוריד ידיעה אם יישארו פחות מ-5, אלא אם היא כפולה או שוברת כלל מפורש.
-   בספורט — drop לידיעה על הרכב, חזרה לסגל או כשירות לקראת משחק (חוץ מפציעה של כוכב גדול), drop לידיעה בלי עובדה קונקרטית (תוצאה, מספר, אירוע — לא "ממשיך להשפיע"), ולידיעת כדורסל/יורוליג/NBA
+   בכל נושא — לא להוריד ידיעה אם יישארו פחות מ-6 (הקוד מסנן עוד אחת אחריך), אלא אם היא כפולה.
+   בספורט — כשנשארות לפחות 6: drop לידיעה על הרכב, חזרה לסגל או כשירות לקראת משחק (חוץ מפציעה של כוכב גדול), drop לידיעה בלי עובדה קונקרטית (תוצאה, מספר, אירוע — לא "ממשיך להשפיע"), ולידיעת כדורסל/יורוליג/NBA
    בלי קשר לקבוצה או שחקן ישראלי.
 4. אסור להוסיף עובדות, מספרים, שמות או תוצאות שלא כתובים בטקסט שקיבלת, ואסור לשנות תוצאות.
 החזר JSON בלבד, באותו מבנה: {"topics": [{"topic": "...", "items": [{"id": "...", "title": "...", "bottom_line": "...",
@@ -915,13 +917,17 @@ def article(e: dict, need_id: bool = True, light: bool = False) -> str:
         print(f"🚫 dropped (AI unsure): {e.get('title')!r}")
         return ""  # ה-AI לא בטוח במה שכתב — לא מציגים
     item = resolve(e)
-    if not e.get("title") or not e.get("bottom_line") or (not item and (need_id or e.get("id"))):
+    # a light item may have no line under the title (the model had no new detail); every other item needs one
+    if not e.get("title") or (not e.get("bottom_line") and not light) or (not item and (need_id or e.get("id"))):
         print(f"🚫 dropped (no matching article): id={e.get('id')} source_title={e.get('source_title')!r}")
         return ""  # פריט שלא מתאים לכתבה אמיתית — לא מציגים
     emoji = re.sub("[\U0001F1E6-\U0001F1FF]", "", e.get("emoji") or "")  # בלי דגלים
-    out = f"🔹 <b>{esc(emoji) + ' ' if emoji.strip() else ''}{esc(plain_hebrew(e['title']))}</b>\n" + (
-        esc(clean_text(e["bottom_line"], e["title"])) if light
-        else f"💡 <i>השורה התחתונה:</i> {esc(clean_text(e['bottom_line'], e['title']))}")
+    out = f"🔹 <b>{esc(emoji) + ' ' if emoji.strip() else ''}{esc(plain_hebrew(e['title']))}</b>"
+    if light:
+        body = clean_text(e.get("bottom_line") or "", e["title"])
+        out += f"\n{esc(body)}" if body else ""
+    else:
+        out += f"\n💡 <i>השורה התחתונה:</i> {esc(clean_text(e['bottom_line'], e['title']))}"
     if item:
         out += f"\n🔗 <a href=\"{esc(item['link'])}\">לקריאת הכתבה המלאה</a> · {esc(item['source'])}"
     return out
@@ -1150,8 +1156,10 @@ def topic_blocks(key: str, ai: dict, shown: set | None = None) -> list:
     rare = {w for t in titles for w in t if sum(w in x for x in titles) >= 2} - COMMON if key in LIGHT else set()
     for e, words in zip(ai.get(key) or [], titles):
         if words & rare & names:
+            print(f"⏭️ {key}: same player/star again: {as_text(e.get('title'))[:50]!r}")
             continue  # עוד ידיעה על אותו שחקן/כוכב — אחת מספיקה (לא משלימים מזה: 3 ידיעות על אבדיה, 09/11/2026)
         if key == "sport" and "אבדיה" in as_text(e.get("title")) and not re.search(r"\d", f"{e.get('title')} {e.get('bottom_line')}"):
+            print(f"⏭️ {key}: Avdija without a concrete number: {as_text(e.get('title'))[:50]!r}")
             continue  # אבדיה — רק עם משהו קונקרטי (נקודות, תוצאה), לא "רצף מרשים"
 
         item = resolve(e) or {}
@@ -1159,8 +1167,11 @@ def topic_blocks(key: str, ai: dict, shown: set | None = None) -> list:
         if link not in seen and len(out) < 5 and src and per_source.get(src, 0) >= 2:
             spare.append(e)
         if link in seen or len(out) == 5 or (src and per_source.get(src, 0) >= 2):
+            if len(out) < 5:
+                print(f"⏭️ {key}: {'already shown' if link in seen else 'third from ' + src}: {as_text(e.get('title'))[:50]!r}")
             continue  # עד 2 ידיעות מאותו מקור בנושא (טכנולוגיה, 09/11/2026: 4 מתוך 5 מ-Yahoo Finance)
         if any(l and l in re.sub(r"[\"'״׳]", "", e.get("title") or "") for l in labels):
+            print(f"⏭️ {key}: show already in the block above: {as_text(e.get('title'))[:50]!r}")
             continue  # התוכנית כבר בבלוק — בלי כפילות
         if a := article(e, light=key in LIGHT):
             out.append(a)
