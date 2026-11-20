@@ -1156,8 +1156,10 @@ def topic_blocks(key: str, ai: dict, shown: set | None = None) -> list:
     rare = {w for t in titles for w in t if sum(w in x for x in titles) >= 2} - COMMON if key in LIGHT else set()
     for e, words in zip(ai.get(key) or [], titles):
         if words & rare & names:
+            print(f"⏭️ {key}: same player/star again: {as_text(e.get('title'))[:50]!r}")
             continue  # עוד ידיעה על אותו שחקן/כוכב — אחת מספיקה (לא משלימים מזה: 3 ידיעות על אבדיה, 09/11/2026)
         if key == "sport" and "אבדיה" in as_text(e.get("title")) and not re.search(r"\d", f"{e.get('title')} {e.get('bottom_line')}"):
+            print(f"⏭️ {key}: Avdija without a concrete number: {as_text(e.get('title'))[:50]!r}")
             continue  # אבדיה — רק עם משהו קונקרטי (נקודות, תוצאה), לא "רצף מרשים"
 
         item = resolve(e) or {}
@@ -1165,8 +1167,11 @@ def topic_blocks(key: str, ai: dict, shown: set | None = None) -> list:
         if link not in seen and len(out) < 5 and src and per_source.get(src, 0) >= 2:
             spare.append(e)
         if link in seen or len(out) == 5 or (src and per_source.get(src, 0) >= 2):
+            if len(out) < 5:
+                print(f"⏭️ {key}: {'already shown' if link in seen else 'third from ' + src}: {as_text(e.get('title'))[:50]!r}")
             continue  # עד 2 ידיעות מאותו מקור בנושא (טכנולוגיה, 09/11/2026: 4 מתוך 5 מ-Yahoo Finance)
         if any(l and l in re.sub(r"[\"'״׳]", "", e.get("title") or "") for l in labels):
+            print(f"⏭️ {key}: show already in the block above: {as_text(e.get('title'))[:50]!r}")
             continue  # התוכנית כבר בבלוק — בלי כפילות
         if a := article(e, light=key in LIGHT):
             out.append(a)
