@@ -444,6 +444,14 @@ except ValueError:
 else:
     raise AssertionError("a station must not swallow the bot's error")
 assert [e[2] for e in _sent] == ["working", "error"] and "boom" in _sent[1][3], _sent
+_sent.clear()
+try:  # שגיאה בתוך הקוד של הבוט: הדיווח אומר איפה (קובץ, שורה, פונקציה)
+    with bot.station("market", "מושך"):
+        bot.fmt_market("x", "index", "a", 1.0)  # str >= float: TypeError בתוך bot.py
+except TypeError:
+    pass
+_w = _sent[1][4]["where"]
+assert _sent[1][2] == "error" and _w["file"] == "bot.py" and _w["func"] == "fmt_market", _sent
 _ar.station = _real_station
 
 print("ok")
