@@ -2,12 +2,6 @@
 from datetime import datetime, timezone
 
 import bot
-import os as _os0, tempfile as _tf0
-# הבדיקות הישנות של בלוק הריאליטי משתמשות בכתבות דמה — בלי בדיקת הכותרת ובלי קובץ הזיכרון האמיתי (נבדקים בנפרד למטה)
-_real_fit, bot.fact_in_title = bot.fact_in_title, lambda text, title: True
-_real_air, bot.after_airing = bot.after_airing, lambda item, label, tv: True
-bot.REPORTED_FILE = _os0.path.join(_tf0.mkdtemp(), "none.json")
-
 now = datetime(2026, 10, 23, 12, 0, tzinfo=timezone.utc)
 
 # Google News: שם המקור נחתך מהכותרת, כתבה ישנה ומקור לא אמין מסוננים, הסדר נשמר
@@ -149,12 +143,13 @@ assert bot.ask_ai("s", {}) == {"items": []} and [m["model"] for m in aura_report
 aura_report._open.clear()
 bot.requests.post = real_post
 
-# 📺 בלוק "אמש" בראש הבידור/ספורט; שורה בלי כתבה אמיתית לא מוצגת; ריק → אין בלוק
-msgs, _ = bot.render(now, [], None, {}, {"ent": [good], "ent_recap": [
-    {"label": "האח הגדול", "text": "ענבל אלדן הודחה", "ids": ["w1"]}, {"label": "המצאה", "text": "x", "ids": ["zz"]}]})
+# 📺 אין יותר בלוק "אמש בריאליטי": גם אם ה-AI מחזיר recap לבידור — רק ידיעות רגילות (21/11/2026)
+msgs, _ = bot.render(now, [], None, {}, {"ent": [good], "ent_recap": [{"label": "האח הגדול", "text": "ענבל אלדן הודחה", "ids": ["w1"]}]})
 ent = next(m for m in msgs if "בידור" in m[0] or "בידור" in m[1])
-assert any(b.startswith("📺 <b>אמש בריאליטי</b>\n• <b>האח הגדול</b> — ענבל אלדן הודחה") for b in ent)
-assert "המצאה" not in "\n".join(ent)
+assert "אמש" not in "\n".join(ent) and "ענבל" not in "\n".join(ent) and sum(b.startswith("🔹") for b in ent) == 1
+assert "ent" not in bot.RECAP
+# 🏟️ בלוק "אמש" בספורט; שורה בלי כתבה אמיתית לא מוצגת; ריק → אין בלוק
+assert "המצאה" not in bot.recap_block("sport", [{"label": "ליגת העל", "text": "המצאה מכבי חיפה 2, בית\"ר 1", "ids": ["zz"]}])
 msgs, _ = bot.render(now, [], None, {}, {"sport": [good], "sport_recap": []})
 assert not any("🏟️" in b for b in sum(msgs, []))
 
@@ -220,50 +215,10 @@ bot.move_sporty(ai)
 assert [e["title"] for e in ai["ent"]] == ["שיחות"] and ai["sport"][-1]["title"].startswith("האח הגדול")
 assert "<b>א</b>" in bot.article(dict(good, emoji="🇵🇹"))
 
-# 📺 שורת בלוק על כתבה שכבר הוצגה בספורט, או ספורטיבית — לא בבלוק הבידור; כתבה מתויגת בשם התוכנית
-msgs, _ = bot.render(now, [], None, {}, {"sport": [good], "ent": [iran], "ent_recap": [
-    {"label": "האח הגדול", "text": "גרסה לנבחרת ישראל", "ids": ["w2"]}, {"label": "הזמר במסכה", "text": "הודח", "ids": ["w1"]}]})
-ent = "\n".join(next(m for m in msgs if any("בידור" in b for b in m[:2])))
-assert "נבחרת" not in ent and "הזמר במסכה" not in ent  # ספורטיבי / כבר הוצג בספורט
+# כתבה מחיפוש של תוכנית מתויגת בשם התוכנית — רמז ל-AI
 tagged = bot.register("t", [dict(own, title="שחר חסון מול אופירה", show="הזמר במסכה")], now)
 assert tagged[0]["found_by_search"] == "הזמר במסכה"
 
-# 📺 לוח שידורים: פריים טיים נשמר היום ונקרא מחר כ"אמש"; שורה מהלוח בלי כתבה — רק אם התוכנית באמת בלוח
-import json as _json, os as _os, tempfile
-sched = {"items": [{"starts": "2026-11-06T19:16:00Z", "title": "הישרדות - פרק הדחה!", "description": "מועצת שבט"},
-                   {"starts": "2026-11-06T10:25:00Z", "title": "בוקר", "description": ""}]}
-real_fetch, bot.fetch = bot.fetch, lambda url: _json.dumps(sched).encode()
-tv = bot.get_schedule(now.date())
-bot.fetch = real_fetch
-assert len(tv) == 3 and tv[0]["time"] == "21:16" and tv[0]["title"].startswith("הישרדות")  # 3 ערוצים, רק ערב
-real_file, bot.SCHEDULE_FILE = bot.SCHEDULE_FILE, _os.path.join(tempfile.mkdtemp(), "s.json")
-bot.save_tv(now.date(), tv)
-assert bot.tv_last_night(now.date() + bot.timedelta(days=1)) == tv and bot.tv_last_night(now.date()) == []
-bot.SCHEDULE_FILE = real_file
-rows = [{"label": "הישרדות", "text": "שי חי הודח", "ids": ["w1"]}, {"label": "האח הגדול", "text": "המצאה", "ids": []}]
-shown_rows = bot.recap_rows("ent", rows, tv_last=["הישרדות - פרק הדחה!"])
-assert [r["label"] for r, _ in shown_rows] == ["הישרדות"]
-# בלי כפל: ידיעה על תוכנית שכבר בבלוק — לא מוצגת
-surv = dict(good, id="w2", source_title="Iran talks", title="כוכב הישרדות מתראיין")
-blocks = bot.topic_blocks("ent", {"ent": [surv, iran], "ent_recap": rows, "ent_tv_last": ["הישרדות - פרק הדחה!"]})
-assert "שי חי הודח" in blocks[0] and len(blocks) == 2 and "הישרדות" not in blocks[1]
-
-# בידור: כתבות מחיפושי הריאליטי — לבלוק בלבד; השאר — לידיעות
-gen, rea = bot.split_reality([{"id": "e1"}, {"id": "e2", "found_by_search": "הישרדות"}])
-assert [e["id"] for e in gen] == ["e1"] and [e["id"] for e in rea] == ["e2"]
-# 📺 הבלוק = הריאליטי ששודר אמש (בקוד): תוכנית שלא שודרה לא נכנסת, ששודרה בלי שורה — מהלוח; "הערב" — רק פתיחת עונה
-last = [{"title": "הזמר במסכה - הארנב נתפס ונחשף!", "channel": "קשת 12", "time": "21:15"},
-        {"title": "הישרדות - פרק הדחה משוגע!", "channel": "רשת 13", "time": "21:15"}, {"title": "חדשות", "channel": "x", "time": "20:00"}]
-tonight = [{"title": "הארץ המובטחת - פרק 1", "channel": "רשת 13", "time": "21:15"},
-           {"title": "הכוכב הבא - פרק 1", "channel": "קשת 12", "time": "21:00"}]
-rows = [{"label": "הישרדות", "text": "אבי שושן הודח. הכתבה מציינת שהיו תגובות.", "ids": ["w1"]},
-        {"label": "רוקדים עם כוכבים", "text": "כתבות עוסקות בזכרונות", "ids": ["w1"]},
-        {"label": "הערב", "text": "הארץ המובטחת — פרק 1 (בכורה/פרק ראשון)", "ids": []}]
-block = bot.recap_block("ent", rows, tv_last=last, tv_tonight=tonight)
-assert "• <b>הישרדות</b> — אבי שושן הודח ·" in block  # משפט על "הכתבה" נמחק
-assert "רוקדים" not in block and "הארץ המובטחת" not in block  # לא שודר אמש / לא ריאליטי
-assert "• <b>הזמר במסכה</b> — הארנב נתפס ונחשף" in block  # שודר, אין שורה — מהלוח
-assert "• <b>הערב</b> — הכוכב הבא, עונה חדשה · קשת 12, 21:00" in block
 # כתיבה נקייה: בלי משפטים על הכתבה, ובלי משפט ראשון שחוזר על הכותרת
 assert bot.clean_text("ריצ'רד לויד, גיטריסט טלוויז'ן, מת בגיל 75. הוא נאבק במחלה.", "ריצ'רד לויד, גיטריסט טלוויז'ן, מת בגיל 75") == "הוא נאבק במחלה."
 assert bot.clean_text("הבמאי מת. פרטים נוספים לא נמסרו בדיווח.") == "הבמאי מת."
@@ -285,27 +240,9 @@ real_get, real_sleep = bot.requests.get, bot.time.sleep
 bot.requests.get, bot.time.sleep = (lambda *a, **k: answers.pop(0)), (lambda s: None)
 assert bot.fetch("https://news.google.com/x") == b"ok" and not answers
 bot.requests.get, bot.time.sleep = real_get, real_sleep
-# 📺 שורה בבלוק הריאליטי — רק העובדה
-assert bot.short_fact("הישרדות", "הישרדות: אבי שושן הודח; הוא הפסיד מעל מיליון שקל.") == "אבי שושן הודח"
-assert bot.short_fact("הזמר במסכה", "הזמר במסכה: הארנב נתפס ונחשף כפי שנרשם בלוח השידורים.") == "הארנב נתפס ונחשף"
-assert bot.short_fact("הזמר במסכה", "הארנב נחשף: זו נועה קירל") == "הארנב נחשף: זו נועה קירל"
-assert bot.short_fact("הישרדות", "אבי שושן הודח. הוא אמר שזה כואב.") == "אבי שושן הודח"
-# 📺 כל ריאליטי: זיהוי מהלוח ע"י AI (רק שמות שבאמת בלוח, + הרשימה הידועה); הבלוק שומר לעצמו את הכתבות שלו
-real_ask = bot.ask_ai
-bot.ask_ai = lambda s, p: {"reality": ["מירוץ הכוכבים - פרק 3", "תוכנית שלא בלוח", "חדשות"]}
-names = bot.reality_names([{"title": "מירוץ הכוכבים - פרק 3", "description": ""}, {"title": "הישרדות - הדחה"}, {"title": "מהדורה"}])
-bot.ask_ai = real_ask
-assert names == ["מירוץ הכוכבים", "הישרדות"]  # "חדשות" לא בלוח כשם תוכנית
-assert bot.reality_on([{"title": "מירוץ הכוכבים - פרק 3"}], names)[0][0] == "מירוץ הכוכבים"
-rabbit = dict(good, id="w2", source_title="Iran talks", title="איתי שכטר הוא הזמר במסכה")
-msgs, _ = bot.render(now, [], None, {}, {"sport": [rabbit], "ent": [good], "ent_recap": [
-    {"label": "הזמר במסכה", "text": "הארנב נחשף: איתי שכטר", "ids": ["w2"]}],
-    "ent_tv_last": [{"title": "הזמר במסכה - הארנב נתפס"}], "ent_reality": ["הזמר במסכה"]})
-text = "\n".join(sum(msgs, []))
-assert "הארנב נחשף: איתי שכטר" in text and "איתי שכטר הוא הזמר במסכה" not in text  # בבלוק, לא כידיעה בספורט
 # שדה מה-AI שהגיע כרשימה לא מפיל את הבריף (קרס כך ב-08/11/2026)
 assert bot.clean_text(["אבי שושן הודח.", "עוד"]) == "אבי שושן הודח. עוד"
-assert bot.recap_block("ent", [{"label": ["הישרדות"], "text": ["אבי שושן הודח"], "ids": ["w1"]}]).count("•") == 1
+assert bot.recap_block("sport", [{"label": ["ליגת העל"], "text": ["מכבי חיפה 2, בני סכנין 0"], "ids": ["w1"]}]).count("•") == 1
 assert "<b>" in bot.article(dict(good, title=["א"], bottom_line=["ב"]))
 # 📈 שוק ההון: נקודה בלי מקף שני; מקורות — כל מקור פעם אחת בשם קצר, עד 3
 assert bot.short_source("Globes - Israel Business News") == bot.short_source("גלובס") == "גלובס"
@@ -333,9 +270,6 @@ two = bot.recap_block("sport", [{"label": "ליגת העל", "text": "מכבי �
                                 {"label": "ליגת העל", "text": "הפועל ת\"א 1, הפועל ב\"ש 0", "ids": ["w2"]},
                                 {"label": "ליגת ווינר", "text": "הפועל ירושלים 59, העמק 65 — הפועל ירושלים חגגה ניצחון", "ids": ["w1"]}])
 assert two.count("• <b>ליגת העל</b>") == 2 and "העמק" not in two
-# 📺 ריאליטי: רק תוצאה; בלי תוצאה — אין שורה
-assert bot.recap_block("ent", [{"label": "הכוורת", "text": "שלושה מתמודדים מתחרים על תואר", "ids": ["w1"]}]) == ""
-assert bot.recap_block("ent", [{"label": "הכוורת", "text": "שלושה מתמודדים מתחרים", "ids": []}], tv_last=[{"title": "הכוורת"}], names=["הכוורת"]) == ""
 # 📈 בלי דגלים ובלי מקף בתווית
 ai = {"market_why": [{"label": "🇨🇳 — אינפלציה במפעלים", "text": "מחירי היצרן טיפסו", "ids": []}]}
 pub, _ = bot.render(now, ["🟢 a"], None, {}, ai, channel=True)
@@ -378,11 +312,6 @@ try:
 except RuntimeError as ex:
     assert "model-b 404" in str(ex)
 bot.requests.post, bot.GEMINI_MODELS = real_post, real_models
-# 📺 "מי הודח" רק מכתבה; "אירוע הגמר" מהלוח — לא תוצאה
-tvl = [{"title": "הישרדות - פרק הדחה משוגע!"}, {"title": "דאבל על הכסף - אירוע הגמר"}]
-blk = bot.recap_block("ent", [{"label": "הישרדות", "text": "אבי שושן הודח", "ids": []}], tv_last=tvl, names=["הישרדות", "דאבל על הכסף"])
-assert blk == ""
-assert "אבי שושן הודח" in bot.recap_block("ent", [{"label": "הישרדות", "text": "אבי שושן הודח", "ids": ["w1"]}], tv_last=tvl, names=["הישרדות"])
 # 📈 נבידיה ב"לשים לב" — לא חוזרת ב"מה הזיז" גם בניסוח אחר; ⚽ אבדיה בלי מספר — לא נכנס
 ai = {"market_why": [{"label": "משבר ניהולי בנבידיה", "text": "דיווחים על ישיבה", "ids": []}, {"label": "נפט", "text": "עלה", "ids": []}],
       "watch": [{"label": "ישיבת דירקטוריון נבידיה", "text": "בקרוב", "ids": []}]}
@@ -391,21 +320,6 @@ mkt = "\n".join(next(m for m in pub if any("שוק ההון" in b for b in m[:2]
 assert "דיווחים על ישיבה" not in mkt and "נפט" in mkt and "בקרוב" in mkt
 blocks = bot.topic_blocks("sport", {"sport": [dict(good, title="דני אבדיה: רצף מרשים", bottom_line="מציג רצף"), dict(iran, title="אבדיה קלע 25 נקודות")]})
 assert len(blocks) == 2 and "25" in blocks[1]
-# 📺 ריאליטי: העובדה בכותרת הכתבה, כתבה מאחרי השידור, ולא משהו שכבר דווח
-import tempfile as _tf
-real_rep, bot.REPORTED_FILE = bot.REPORTED_FILE, _os.path.join(_tf.mkdtemp(), "r.json")
-bot.fact_in_title, bot.after_airing = _real_fit, _real_air
-assert bot.fact_in_title("אבי שושן הודח", "אבי שושן הודח מהישרדות בדרמה") and not bot.fact_in_title("אבי שושן הודח", "לאחר ההדחה: אבי שושן שולח מסר")
-arts = bot.register("k", [dict(own, title="דנה לוי הודחה מהישרדות", link="https://k/1"), dict(own, title="לאחר ההדחה: אבי שושן שולח מסר", link="https://k/2")])
-tvk = [{"title": "הישרדות - פרק הדחה"}]
-rows_k = [{"label": "הישרדות", "text": "אבי שושן הודח", "ids": ["k2"]}, {"label": "הישרדות", "text": "דנה לוי הודחה", "ids": ["k1"]}]
-got = bot.recap_rows("ent", rows_k, tv_last=tvk, names=["הישרדות"])
-assert [r["text"] for r, _ in got] == ["דנה לוי הודחה"]
-bot.remember(got, now.date())
-assert bot.already_reported("הישרדות", "דנה לוי הודחה") and bot.recap_rows("ent", rows_k, tv_last=tvk, names=["הישרדות"]) == []
-late = dict(own, published=bot.datetime.now(bot.IL_TZ) - bot.timedelta(days=3))
-assert not bot.after_airing(late, "הישרדות", [{"title": "הישרדות", "time": "21:15"}]) and bot.after_airing(late, "הישרדות", tvk)
-bot.REPORTED_FILE = real_rep
 # 🔤 שם אחיד; ידיעה שה-AI לא בטוח בה — לא מוצגת
 assert bot.plain_hebrew("מנכ\"ל אנבידיה, משבר בנבידיה") == 'מנכ"ל Nvidia, משבר ב-Nvidia'
 assert bot.article(dict(good, bottom_line="ראש הממשלה ובני גנץ/איזנקוט (לפי הכותרת) יערכו פגישה")) == ""
