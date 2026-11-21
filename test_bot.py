@@ -458,4 +458,33 @@ _w = _sent[1][4]["where"]
 assert _sent[1][2] == "error" and _w["file"] == "bot.py" and _w["func"] == "fmt_market", _sent
 _ar.station = _real_station
 
+# AURA control: Maor's overrides; none set -> today's values; wrong type -> ignored; paused -> the run exits before any report
+import os, runpy, time as _t
+real_cfg = (bot.MODELS, bot.GEMINI_MODELS, bot.MAX_AGE, bot.DRAMATIC)
+def aura(settings, paused=False):
+    bot.MODELS, bot.GEMINI_MODELS, bot.MAX_AGE, bot.DRAMATIC = real_cfg  # each case starts from the code's values
+    _ar._cfg["news"] = (_t.time(), {"paused": paused, "settings": settings})
+    bot.apply_aura_settings()
+    return bot.MODELS, bot.GEMINI_MODELS, bot.MAX_AGE, bot.DRAMATIC
+if not os.environ.get("AI_MODELS") and not os.environ.get("GEMINI_MODEL"):
+    assert real_cfg == (["gpt-6.1-terra", "gpt-6-luna"], ["gemini-3.1-flash-lite", "gemini-3.6-flash"], bot.timedelta(hours=26), 3.0)
+assert aura({}) == real_cfg
+assert aura({"MODELS": ["gpt-6-luna"], "GEMINI_MODELS": ["gemini-3.6-flash"], "MAX_AGE_H": 30, "DRAMATIC": 5}) == \
+    (["gpt-6-luna"], ["gemini-3.6-flash"], bot.timedelta(hours=30), 5)
+assert aura({"MODELS": "gpt-6-luna", "GEMINI_MODELS": [1], "MAX_AGE_H": "abc", "DRAMATIC": True}) == real_cfg
+aura({}, paused=True)
+_sent[:], posts[:] = [], []
+_ar.station = lambda *a, **k: _sent.append(a)
+bot.requests.post = lambda *a, **k: posts.append(k.get("json"))
+os.environ["SUPABASE_SERVICE_KEY"] = "k"  # office() would post its "start" row if the run got that far
+try:
+    runpy.run_path(bot.__file__, run_name="__main__")
+    raise AssertionError("a paused run must exit")
+except SystemExit as ex:
+    assert ex.code == 0 and posts == [] and _sent == [], (ex.code, posts, _sent)
+finally:
+    os.environ.pop("SUPABASE_SERVICE_KEY")
+    bot.requests.post, _ar.station = real_post, _real_station
+aura({})
+
 print("ok")

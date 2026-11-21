@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo
 import requests
 import yfinance as yf
 
-from aura_report import ai as ai_used, working
+from aura_report import ai as ai_used, cfg_get, paused, working
 
 # =============================================================================
 # ─── הגדרות וסודות ───────────────────────────────────────────────────────────
@@ -1421,7 +1421,18 @@ def office(kind: str, text: str = "") -> None:
     except Exception as ex:
         print(f"⚠️ office report failed: {type(ex).__name__}")
 
+def apply_aura_settings() -> None:
+    """Maor's overrides from AURA, read once at run start: AURA > env AI_MODELS/GEMINI_MODEL > the constants; none set -> no change."""
+    global MODELS, GEMINI_MODELS, MAX_AGE, DRAMATIC
+    MODELS = cfg_get("news", "MODELS", MODELS)
+    GEMINI_MODELS = cfg_get("news", "GEMINI_MODELS", GEMINI_MODELS)
+    MAX_AGE = timedelta(hours=cfg_get("news", "MAX_AGE_H", MAX_AGE / timedelta(hours=1)))
+    DRAMATIC = cfg_get("news", "DRAMATIC", DRAMATIC)
+
 if __name__ == "__main__":
+    if paused("news"):
+        sys.exit(0)  # paused in AURA: no "start" row, nothing sent
+    apply_aura_settings()
     office("start", "בריף הבוקר")
     try:
         public, private = build()
