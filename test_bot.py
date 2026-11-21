@@ -209,6 +209,20 @@ bot.edit_pass(ai)
 assert ai["ent"][0]["bottom_line"] == "א נקי" and bot.FAILURES[-1].startswith("• <b>עורך")
 bot.ask_ai = real_ask
 
+# 📝 ספורט/בידור: התקציר מהכתבה עצמה (נאסף בבדיקת התאריך) מגיע לעורך, כדי שיאריך את השורה; בשאר הנושאים — לא
+page = '<meta property="og:description" content="הזמרת סיפרה בראיון על הפרידה, על השנה הקשה ועל האלבום החדש שיוצא בחודש הבא">'
+real_fetch, real_rurl = bot.fetch, bot.real_url
+bot.fetch, bot.real_url = (lambda url: page.encode()), (lambda link: link)
+assert bot.real_date("https://x/desc") is None and bot.DESCS["https://x/desc"].startswith("הזמרת סיפרה")
+bot.fetch, bot.real_url = real_fetch, real_rurl
+reg = bot.register("z", [dict(own, title="זמרת נפרדה", link="https://x/desc")])
+seen_payload = {}
+real_ask, bot.ask_ai = bot.ask_ai, lambda s, p: seen_payload.update(p) or {"topics": []}
+bot.edit_pass({"ent": [dict(good, id=reg[0]["id"], source_title="זמרת נפרדה")], "world": [dict(good, id=reg[0]["id"], source_title="זמרת נפרדה")]})
+bot.ask_ai = real_ask
+items = {t["key"]: t["items"][0] for t in seen_payload["topics"]}
+assert items["ent"]["article"].startswith("הזמרת סיפרה") and "article" not in items["world"]
+
 # ⚽ ידיעה ספורטיבית בבידור עוברת לספורט; אימוג'י דגל שנמחק לא משאיר רווח
 ai = {"sport": [good], "ent": [dict(good, title="האח הגדול לנבחרת ישראל בכדורגל"), iran]}
 bot.move_sporty(ai)

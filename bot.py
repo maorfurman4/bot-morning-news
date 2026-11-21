@@ -454,8 +454,8 @@ TOPICS = {
               "גדולים. יורוליג, NBA וכדורסל בכלל — רק כשיש קשר לישראלים (קבוצה ישראלית, שחקן ישראלי). אסור: קבוצות חלשות, מאבקי תחתית/ירידה, הרכבים צפויים, שחקנים שוליים, תוצאות סתמיות — לא בראש הרשימה. אם אין מספיק ידיעות טובות, השלם עד 8 לפחות מהנותרות והצב אותן בסוף. כמה כתבות על אותו שחקן או קבוצה — "
               "ידיעה אחת. תוצאות ומספרים — רק כמו שכתוב בכתבה. "
               "טון קליל וזורם, כמו מוסף ספורט — כותרות עם חיוך ופאנץ', אבל העובדות מדויקות. "
-              "bottom_line: 2 משפטים קלילים (עד 45 מילים), רק מתוך הכתבה: הראשון מוסיף פרט שלא כתוב בכותרת — מספר, שם או סיבה; "
-              "השני — הקשר, תגובה או מה הלאה. אם בכתבה יש רק פרט אחד — משפט אחד מספיק, בלי למלא. "
+              "bottom_line: 2–3 משפטים קלילים ומלאים (25–50 מילים), רק מתוך הכתבה (title ו-summary): הראשון מוסיף פרט שלא כתוב בכותרת — "
+              "מספר, שם או סיבה; השני — הקשר, ציטוט, תגובה או מה הלאה. אם יש רק פרט אחד — משפט אחד, בלי להמציא. "
               "אם בכתבה אין פרט נוסף, החזר bottom_line ריק (\"\") — לא לחזור על הכותרת במילים אחרות. "
               "בלי \"המשמעות\" ובלי ניתוח."),
     "ent": ("🎬", "בידור וריאליטי",
@@ -464,8 +464,8 @@ TOPICS = {
             "ומהעולם רק הכי גדולים. רכילות מותרת בלי פילטרים (פרידות, קשרים, סקנדלים) — אבל רק עובדות שכתובות בכתבה, "
             "בלי להמציא. מדי פעם, כשיוצאת סדרה או סרט גדולים או מוערכים מאוד — גם זה. "
             "טון קליל וזורם, כמו מוסף סוף שבוע — כותרות עם חיוך ופאנץ'. "
-            "bottom_line: 2 משפטים קלילים (עד 45 מילים), רק מתוך הכתבה: הראשון מוסיף פרט שלא כתוב בכותרת — מספר, שם או סיבה; "
-              "השני — הקשר, תגובה או מה הלאה. אם בכתבה יש רק פרט אחד — משפט אחד מספיק, בלי למלא. "
+            "bottom_line: 2–3 משפטים קלילים ומלאים (25–50 מילים), רק מתוך הכתבה (title ו-summary): הראשון מוסיף פרט שלא כתוב בכותרת — "
+              "מספר, שם או סיבה; השני — הקשר, ציטוט, תגובה או מה הלאה. אם יש רק פרט אחד — משפט אחד, בלי להמציא. "
               "אם בכתבה אין פרט נוסף, החזר bottom_line ריק (\"\") — לא לחזור על הכותרת במילים אחרות. "
               "בלי \"המשמעות\" ובלי ניתוח."),
 }
@@ -575,6 +575,8 @@ def register(prefix: str, items: list, now: datetime | None = None) -> list:
 # ── תאריך אמיתי: Google News לפעמים מתארך כתבות ישנות כחדשות (מעריב, 06/11/2026) ──
 
 PUBLISHED_RE = re.compile(r'"datePublished"\s*:\s*"([^"]+)"|article:published_time"\s+content="([^"]+)"')
+DESC_RE = re.compile(r'<meta[^>]+(?:property="og:description"|name="description")[^>]+content="([^"]{40,})"')
+DESCS: dict = {}  # קישור → התקציר מהכתבה עצמה (נאסף בבדיקת התאריך), כדי שהעורך יוכל להאריך ידיעות קלילות
 
 def real_url(link: str) -> str | None:
     """קישור של Google News → כתובת הכתבה עצמה.
@@ -599,7 +601,10 @@ def real_date(link: str) -> datetime | None:
     """התאריך שכתוב בכתבה עצמה; None אם אי אפשר לדעת (אתר שחוסם, אין תאריך בדף) — ואז לא פוסלים."""
     try:
         url = real_url(link)
-        m = url and PUBLISHED_RE.search(fetch(url).decode("utf-8", "ignore"))
+        page = fetch(url).decode("utf-8", "ignore") if url else ""
+        if d := DESC_RE.search(page):
+            DESCS[link] = html.unescape(d.group(1)).strip()[:500]
+        m = PUBLISHED_RE.search(page)
         if not m:
             return None
         d = datetime.fromisoformat(next(g for g in m.groups() if g).replace("Z", "+00:00"))
@@ -639,10 +644,12 @@ EDITOR = """
    בתוכנית עצמה (רק מזכירה אותה, למשל "הוזכר בהקשר של...") — drop.
 2. מחק פתיחות כמו "YNET חשף", "הכתבה מציינת", "לפי הדיווח", זמני פרסום ("פורסם לפני X שעות") והתווית "המשמעות:".
 3. טון: בספורט ובבידור — קליל וזורם; בשאר — ענייני ומדויק.
+   בספורט ובבידור — bottom_line של 2–3 משפטים מלאים (25–50 מילים), שלא ייראה ריק: השלם פרטים מ-article (מי, מה, ציטוט,
+   מה הלאה) — רק מה שכתוב בו. בלי article — השאר כמו שהוא, לא למלא במילים ריקות.
    בכל נושא — לא להוריד ידיעה אם יישארו פחות מ-6 (הקוד מסנן עוד אחת אחריך), אלא אם היא כפולה.
    בספורט — כשנשארות לפחות 6: drop לידיעה על הרכב, חזרה לסגל או כשירות לקראת משחק (חוץ מפציעה של כוכב גדול), drop לידיעה בלי עובדה קונקרטית (תוצאה, מספר, אירוע — לא "ממשיך להשפיע"), ולידיעת כדורסל/יורוליג/NBA
    בלי קשר לקבוצה או שחקן ישראלי.
-4. אסור להוסיף עובדות, מספרים, שמות או תוצאות שלא כתובים בטקסט שקיבלת, ואסור לשנות תוצאות.
+4. אסור להוסיף עובדות, מספרים, שמות או תוצאות שלא כתובים בטקסט שקיבלת (כולל article), ואסור לשנות תוצאות.
 החזר JSON בלבד, באותו מבנה: {"topics": [{"topic": "...", "items": [{"id": "...", "title": "...", "bottom_line": "...",
 "drop": false}], "recap": [{"n": 0, "text": "...", "drop": false}]}]}
 """
@@ -727,10 +734,17 @@ def proofread(ai: dict) -> None:
             print(f"✋ proof rejected (numbers/length changed): {old[:60]!r} → {as_text(new)[:60]!r}")
     print(f"✏️ proofread: {changed} fixed, {rejected} rejected, {len(texts) - changed - rejected} unchanged")
 
+def article_text(e: dict) -> str:
+    """מה שידוע מהכתבה מעבר לכותרת: התקציר מהדף עצמו, או התקציר מה-RSS (אם הוא לא רק הכותרת שוב)."""
+    item = resolve(e) or {}
+    summary = item.get("summary") or ""
+    return DESCS.get(item.get("link")) or ("" if summary.startswith((item.get("title") or "")[:40]) else summary[:500])
+
 def edit_pass(ai: dict) -> None:
     """עורך שני על הטקסט הסופי; אם נכשל — נשאר הטקסט המקורי."""
     payload = {"topics": [{"topic": TOPICS[k][1], "key": k,
-                           "items": [{"id": e.get("id"), "title": e.get("title"), "bottom_line": e.get("bottom_line")}
+                           "items": [{"id": e.get("id"), "title": e.get("title"), "bottom_line": e.get("bottom_line"),
+                                      **({"article": a} if k in LIGHT and (a := article_text(e)) else {})}
                                      for e in ai.get(k) or []],
                            "recap": [{"n": n, "label": r.get("label"), "text": r.get("text")}
                                      for n, r in enumerate(ai.get(f"{k}_recap") or [])],
@@ -858,7 +872,7 @@ def clean_text(text, title="") -> str:
             kept = kept[1:]  # גוף שחוזר על הכותרת — מתחילים ממה שחדש
     return " ".join(kept)
 
-LIGHT = {"sport", "ent"}  # פורמט קליל: כותרת + עד 2 משפטים, בלי "השורה התחתונה"
+LIGHT = {"sport", "ent"}  # פורמט קליל: כותרת + 2–3 משפטים, בלי "השורה התחתונה"
 
 def article(e: dict, need_id: bool = True, light: bool = False) -> str:
     e = dict(e, **{f: as_text(e.get(f)) for f in ("title", "bottom_line", "emoji") if e.get(f) is not None})
