@@ -415,4 +415,13 @@ finally:
     bot.requests.post, _ar.station = real_post, _real_station
 aura({})
 
+# 📰 feeds get a named bot UA, not a bare "Mozilla/5.0" (the Guardian 403s it)
+_seen = {}
+class _R:
+    status_code, content = 200, b"<rss/>"
+    def raise_for_status(self): pass
+_real_get, bot.requests.get = bot.requests.get, lambda url, headers=None, timeout=None: _seen.update(headers) or _R()
+assert bot.fetch("https://www.theguardian.com/world/rss") == b"<rss/>" and _seen["User-Agent"].startswith("bot-morning-news/")
+bot.requests.get = _real_get
+
 print("ok")
